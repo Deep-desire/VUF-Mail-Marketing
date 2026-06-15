@@ -49,6 +49,7 @@ async function checkUploadCompletion(uploadId) {
 app.http('api', {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   route: '{*segments}',
+  authLevel: 'anonymous',
   extraInputs: [df.input.durableClient()],
   handler: async (request, context) => {
     // Enable CORS preflight interceptor
