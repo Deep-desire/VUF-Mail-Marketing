@@ -45,6 +45,57 @@ async function checkUploadCompletion(uploadId) {
   }
 }
 
+// Helper to re-evaluate duplicate status for specific emails in an upload
+async function revalidateDuplicatesForEmails(uploadId, emails) {
+  const uniqueEmails = [...new Set(emails.filter(Boolean).map(e => e.trim().toLowerCase()))];
+  if (uniqueEmails.length === 0) return;
+  
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  
+  const unsubscribedList = await prisma.unsubscribed.findMany({
+    where: { email: { in: uniqueEmails } }
+  });
+  const unsubscribedSet = new Set(unsubscribedList.map(u => u.email.toLowerCase()));
+  
+  for (const email of uniqueEmails) {
+    const contacts = await prisma.contact.findMany({
+      where: { uploadId, email },
+    });
+    
+    if (contacts.length === 0) continue;
+    
+    if (contacts.length > 1) {
+      await prisma.contact.updateMany({
+        where: { uploadId, email },
+        data: {
+          status: 'duplicate',
+          error: 'Duplicate email in file'
+        }
+      });
+    } else {
+      const contact = contacts[0];
+      let status = 'valid';
+      let error = null;
+      
+      if (!email) {
+        status = 'invalid';
+        error = 'Email is empty';
+      } else if (!emailRegex.test(email)) {
+        status = 'invalid';
+        error = 'Invalid email format';
+      } else if (unsubscribedSet.has(email)) {
+        status = 'unsubscribed';
+        error = 'Email is unsubscribed';
+      }
+      
+      await prisma.contact.update({
+        where: { id: contact.id },
+        data: { status, error },
+      });
+    }
+  }
+}
+
 // --- 1. HTTP Dispatcher & Route Handlers ---
 app.http('api', {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -424,6 +475,188 @@ app.http('api', {
           where: { id },
         });
         return sendJson(200, { message: 'Upload deleted successfully' });
+      }
+
+      // PUT /contacts/:id
+      if ((match = path.match(/^\/contacts\/([a-zA-Z0-9-]+)$/)) && method === 'PUT') {
+        const id = match[1];
+        await authenticate(request);
+        const body = await request.json();
+        const { name, email } = body;
+
+        const contact = await prisma.contact.findUnique({
+          where: { id },
+        });
+        if (!contact) {
+          return sendJson(404, { message: 'Contact not found' });
+        }
+
+        const oldEmail = contact.email;
+        const newEmail = email !== undefined ? email.trim() : contact.email;
+        const newName = name !== undefined ? name.trim() : contact.name;
+
+        // Perform validation for the updated contact
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        let newStatus = 'valid';
+        let newError = null;
+
+        if (!newEmail) {
+          newStatus = 'invalid';
+          newError = 'Email is empty';
+        } else if (!emailRegex.test(newEmail.toLowerCase())) {
+          newStatus = 'invalid';
+          newError = 'Invalid email format';
+        } else {
+          // Check unsubscribe
+          const isUnsubscribed = await prisma.unsubscribed.findUnique({
+            where: { email: newEmail.toLowerCase() },
+          });
+          if (isUnsubscribed) {
+            newStatus = 'unsubscribed';
+            newError = 'Email is unsubscribed';
+          } else {
+            // Check duplicate in same upload (excluding self)
+            const duplicate = await prisma.contact.findFirst({
+              where: {
+                uploadId: contact.uploadId,
+                email: newEmail.toLowerCase(),
+                id: { not: id },
+              },
+            });
+            if (duplicate) {
+              newStatus = 'duplicate';
+              newError = 'Duplicate email in file';
+            }
+          }
+        }
+
+        // Update contact record
+        const updatedContact = await prisma.contact.update({
+          where: { id },
+          data: {
+            name: newName,
+            email: newEmail,
+            status: newStatus,
+            error: newError,
+          },
+        });
+
+        // Resolve duplicates across the upload for affected emails
+        if (oldEmail.toLowerCase() !== newEmail.toLowerCase()) {
+          await revalidateDuplicatesForEmails(contact.uploadId, [oldEmail, newEmail]);
+        }
+
+        // Recount upload stats to keep it 100% accurate and consistent
+        const uploadId = contact.uploadId;
+        const [
+          totalRows,
+          validEmails,
+          invalidEmails,
+          duplicateEmails,
+          unsubscribedEmails,
+        ] = await Promise.all([
+          prisma.contact.count({ where: { uploadId } }),
+          prisma.contact.count({ where: { uploadId, status: 'valid' } }),
+          prisma.contact.count({ where: { uploadId, status: 'invalid' } }),
+          prisma.contact.count({ where: { uploadId, status: 'duplicate' } }),
+          prisma.contact.count({ where: { uploadId, status: 'unsubscribed' } }),
+        ]);
+
+        const upload = await prisma.upload.findUnique({ where: { id: uploadId } });
+        const updateData = {
+          totalRows,
+          validEmails,
+          invalidEmails,
+          duplicateEmails,
+          unsubscribedEmails,
+        };
+
+        if (upload && upload.status !== 'idle') {
+          const [sentCount, failedCount, pendingCount, skippedCount] = await Promise.all([
+            prisma.contact.count({ where: { uploadId, deliveryStatus: 'sent' } }),
+            prisma.contact.count({ where: { uploadId, deliveryStatus: 'failed' } }),
+            prisma.contact.count({ where: { uploadId, deliveryStatus: 'pending' } }),
+            prisma.contact.count({ where: { uploadId, deliveryStatus: 'skipped' } }),
+          ]);
+          updateData.totalCount = validEmails;
+          updateData.sentCount = sentCount;
+          updateData.failedCount = failedCount;
+          updateData.pendingCount = pendingCount;
+          updateData.skippedCount = skippedCount;
+        }
+
+        await prisma.upload.update({
+          where: { id: uploadId },
+          data: updateData,
+        });
+
+        return sendJson(200, updatedContact);
+      }
+
+      // DELETE /contacts/:id
+      if ((match = path.match(/^\/contacts\/([a-zA-Z0-9-]+)$/)) && method === 'DELETE') {
+        const id = match[1];
+        await authenticate(request);
+
+        const contact = await prisma.contact.findUnique({
+          where: { id },
+        });
+        if (!contact) {
+          return sendJson(404, { message: 'Contact not found' });
+        }
+
+        await prisma.contact.delete({
+          where: { id },
+        });
+
+        // Resolve duplicates across the upload for this deleted contact's email
+        await revalidateDuplicatesForEmails(contact.uploadId, [contact.email]);
+
+        // Recount upload stats to keep it 100% accurate and consistent
+        const uploadId = contact.uploadId;
+        const [
+          totalRows,
+          validEmails,
+          invalidEmails,
+          duplicateEmails,
+          unsubscribedEmails,
+        ] = await Promise.all([
+          prisma.contact.count({ where: { uploadId } }),
+          prisma.contact.count({ where: { uploadId, status: 'valid' } }),
+          prisma.contact.count({ where: { uploadId, status: 'invalid' } }),
+          prisma.contact.count({ where: { uploadId, status: 'duplicate' } }),
+          prisma.contact.count({ where: { uploadId, status: 'unsubscribed' } }),
+        ]);
+
+        const upload = await prisma.upload.findUnique({ where: { id: uploadId } });
+        const updateData = {
+          totalRows,
+          validEmails,
+          invalidEmails,
+          duplicateEmails,
+          unsubscribedEmails,
+        };
+
+        if (upload && upload.status !== 'idle') {
+          const [sentCount, failedCount, pendingCount, skippedCount] = await Promise.all([
+            prisma.contact.count({ where: { uploadId, deliveryStatus: 'sent' } }),
+            prisma.contact.count({ where: { uploadId, deliveryStatus: 'failed' } }),
+            prisma.contact.count({ where: { uploadId, deliveryStatus: 'pending' } }),
+            prisma.contact.count({ where: { uploadId, deliveryStatus: 'skipped' } }),
+          ]);
+          updateData.totalCount = validEmails;
+          updateData.sentCount = sentCount;
+          updateData.failedCount = failedCount;
+          updateData.pendingCount = pendingCount;
+          updateData.skippedCount = skippedCount;
+        }
+
+        await prisma.upload.update({
+          where: { id: uploadId },
+          data: updateData,
+        });
+
+        return sendJson(200, { message: 'Contact deleted successfully' });
       }
 
       // ──────────────────────────────────────────

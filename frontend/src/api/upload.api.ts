@@ -1,5 +1,5 @@
 import api from './axios';
-import { Upload, ContactsResponse, DashboardStats } from '../types';
+import { Upload, ContactsResponse, DashboardStats, Contact } from '../types';
 
 export const uploadApi = {
   uploadExcel: (file: File) => {
@@ -28,4 +28,10 @@ export const uploadApi = {
     api.put<Upload>(`/uploads/${id}`, data),
 
   delete: (id: string) => api.delete(`/uploads/${id}`),
+
+  updateContact: (id: string, data: { name: string; email: string }) =>
+    api.put<Contact>(`/contacts/${id}`, data),
+
+  deleteContact: (id: string) =>
+    api.delete<{ message: string }>(`/contacts/${id}`),
 };
