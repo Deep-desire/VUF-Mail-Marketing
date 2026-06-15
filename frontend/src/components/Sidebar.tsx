@@ -9,7 +9,7 @@ import {
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/uploads/new', icon: Upload, label: 'Upload Excel' },
+  { to: '/uploads', icon: Upload, label: 'Uploads' },
   { to: '/templates', icon: FileText, label: 'Templates' },
 ];
 

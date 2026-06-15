@@ -23,4 +23,9 @@ export const uploadApi = {
 
   startSend: (id: string, templateId: string) =>
     api.post<{ message: string }>(`/uploads/${id}/send`, { templateId }),
+
+  update: (id: string, data: Partial<{ fileName: string; originalName: string }>) =>
+    api.put<Upload>(`/uploads/${id}`, data),
+
+  delete: (id: string) => api.delete(`/uploads/${id}`),
 };

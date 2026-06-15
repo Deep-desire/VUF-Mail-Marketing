@@ -52,3 +52,9 @@ pnpm-debug.log*
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+# Azurite local emulator database and storage files
+__azurite_db_*__.json
+__blobstorage__
+__queuestorage__
+__tablestorage__

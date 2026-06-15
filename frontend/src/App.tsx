@@ -23,7 +23,7 @@ function App() {
         }
       >
         <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/uploads/new" element={<UploadExcel />} />
+        <Route path="/uploads" element={<UploadExcel />} />
         <Route path="/uploads/:id" element={<UploadDetails />} />
         <Route path="/templates" element={<Templates />} />
         <Route path="/templates/create" element={<CreateTemplate />} />

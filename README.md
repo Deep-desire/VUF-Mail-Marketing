@@ -1,6 +1,6 @@
 # VUF Mail Marketing System
 
-A production-ready email marketing system for VUF.org built with React + NestJS.
+A production-ready email marketing system for VUF.org built with React (Vite + TS) on the frontend and **pure Node.js JavaScript Azure Functions (v4 programming model)** on the backend.
 
 ---
 
@@ -16,47 +16,15 @@ A production-ready email marketing system for VUF.org built with React + NestJS.
 - Axios
 - Lucide React Icons
 
-### Backend
-- NestJS 10 + TypeScript
+### Backend (Azure Functions v4 - Pure JavaScript)
+- **Azure Functions Node.js Runtime (v4 model)**
+- **Azure Durable Functions** (Orchestrator + Activity task framework replacing Redis/BullMQ)
 - Prisma ORM + Supabase (PostgreSQL)
-- Redis + BullMQ (job queue)
-- Amazon SES (primary email)
+- AWS SES (primary email)
 - Nodemailer SMTP (fallback)
 - Handlebars (template rendering)
-- Multer (file uploads)
-- xlsx (Excel parsing)
+- xlsx (In-memory Excel parsing)
 - JWT Authentication
-- Passport.js
-
----
-
-## 🚀 Quick Start with Docker
-
-### Prerequisites
-- Docker & Docker Compose installed
-
-### Steps
-
-```bash
-# 1. Clone the repository
-cd "Mail Marketing VUF"
-
-# 2. Copy environment variables
-cp backend/.env.example backend/.env
-
-# 3. Edit backend/.env with your credentials (AWS SES, SMTP, and Supabase Database URLs)
-
-# 4. Start all services
-docker-compose up -d --build
-
-# 5. Access the application
-# Frontend: http://localhost
-# Backend API: http://localhost:3000/api
-```
-
-### Default Admin Login
-- **Email:** admin@vuf.org
-- **Password:** admin123
 
 ---
 
@@ -64,52 +32,78 @@ docker-compose up -d --build
 
 ### Prerequisites
 - Node.js 20+
-- Redis 7
+- Azure Functions Core Tools (`func`) installed globally
 - Supabase Project (PostgreSQL)
+- Azurite (or an Azure Storage Connection String) for running Durable Functions locally
+
+---
 
 ### Backend Setup
 
 1. **Configure Environment Variables**:
-   Go to your Supabase Project -> **Settings** -> **Database** -> **Connection string** -> **URI**. Copy your connection URLs:
-   - For `DATABASE_URL`, copy the **Transaction Mode** URI (uses port `6543`, ends with `?pgbouncer=true`).
-   - For `DIRECT_URL`, copy the **Session Mode** URI (uses port `5432`).
-
-   Create your `.env` file in the `backend/` folder:
+   Azure Functions use `local.settings.json` for local settings. Copy the example file:
    ```bash
    cd backend
-   cp .env.example .env
+   cp local.settings.json.example local.settings.json  # Or edit existing local.settings.json
    ```
-   Open `.env` and fill in `DATABASE_URL` and `DIRECT_URL` (replacing `[YOUR-PASSWORD]` and `[YOUR-REGION]` with your Supabase DB password and region).
+   Open `local.settings.json` and verify the settings inside `"Values"`:
+   *   `DATABASE_URL`: Your Supabase connection string.
+   *   `JWT_SECRET`: Secret key for signing authorization tokens.
+   *   `SMTP_*` / `AWS_*`: Configuration credentials for email delivery.
+   *   `AzureWebJobsStorage`: Set to `UseDevelopmentStorage=true` for local development (ensure Azurite is running) or insert an Azure Storage account connection string.
 
-2. **Install & Sync Database**:
+2. **Install Dependencies & Generate Client**:
    ```bash
    # Install dependencies
    npm install
 
-   # Generate Prisma client types
+   # Generate Prisma client bindings
    npx prisma generate
+   ```
 
+3. **Push Schema & Seed Database**:
+   ```bash
    # Push schema to your Supabase database
    npx prisma db push
 
    # Seed default admin login credentials
-   npm run prisma:seed
-
-   # Start development server
-   npm run start:dev
+   npx prisma db seed
    ```
+
+4. **Start Development Server**:
+   Ensure **Azurite** (or Azure Storage emulator) is running, then start the Azure Function runtime:
+   ```bash
+   npm start
+   ```
+   The API will now be listening locally at `http://localhost:7071/api`.
+
+---
 
 ### Frontend Setup
 
-```bash
-cd frontend
+1. **Configure Environment Variables**:
+   Create a `.env` file in the `frontend/` directory:
+   ```env
+   VITE_API_URL=http://localhost:7071/api
+   ```
 
-# Install dependencies
-npm install
+2. **Install & Run**:
+   ```bash
+   cd frontend
+   
+   # Install dependencies
+   npm install
 
-# Start development server
-npm run dev
-```
+   # Start development server
+   npm run dev
+   ```
+   Open `http://localhost:5173` in your browser.
+
+---
+
+### Default Admin Login
+- **Email:** admin@vuf.org
+- **Password:** admin123
 
 ---
 
@@ -128,7 +122,7 @@ npm run dev
 | GET | /api/uploads | List all uploads |
 | GET | /api/uploads/:id | Get upload details |
 | GET | /api/uploads/:id/contacts | Get contacts in upload |
-| POST | /api/uploads/:id/send | Start sending template to upload |
+| POST | /api/uploads/:id/send | Start sending template to upload (Triggers Durable Orchestrator) |
 | GET | /api/uploads/stats/dashboard | Dashboard metrics stats |
 
 ### Templates
@@ -151,46 +145,21 @@ npm run dev
 
 ## 📧 Email Sending Flow
 
-1. **Upload Excel**: Admin uploads an Excel file with `name` and `email` columns. The backend validates email formats, filters duplicates, and checks unsubscribes.
+1. **Upload Excel**: Admin uploads an Excel file with `name` and `email` columns. The backend validates email formats, filters duplicates, and checks unsubscribes, storing everything to Postgres.
 2. **Create Template**: Admin designs an email template using variables `{{name}}`, `{{email}}`, and `{{unsubscribeLink}}`.
 3. **Send Emails**: Admin opens the upload's details page, clicks **Send Email Template**, selects the template, and initiates sending.
-4. **Queue Processing**: Backend marks contacts as `pending` and adds bulk jobs into the BullMQ queue.
-5. **Worker Execution**: The BullMQ processor executes sends with a 200ms delay to prevent rate issues, rendering HTML body with Handlebars and sending via AWS SES (with Nodemailer SMTP fallback).
-6. **Live Report**: The upload details page tracks sent, failed, pending, and skipped counts in real-time.
-
----
-
-## 🔧 Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| DATABASE_URL | Supabase pooled connection string (port 6543) |
-| DIRECT_URL | Supabase direct connection string for migrations (port 5432) |
-| REDIS_HOST | Redis host (default: localhost) |
-| REDIS_PORT | Redis port (default: 6379) |
-| JWT_SECRET | JWT token secret |
-| JWT_EXPIRES_IN| JWT token expiry (default: 24h) |
-| AWS_REGION | AWS region for SES |
-| AWS_ACCESS_KEY_ID | AWS access key |
-| AWS_SECRET_ACCESS_KEY | AWS secret key |
-| SES_FROM_EMAIL | Sender email address (default: noreply@vuf.org) |
-| SMTP_HOST | SMTP server host (fallback) |
-| SMTP_PORT | SMTP server port |
-| SMTP_USER | SMTP username |
-| SMTP_PASS | SMTP password |
-| FRONTEND_URL | Frontend URL (for unsubscribe links) |
-| APP_PORT | Backend port (default: 3000) |
+4. **Queue Processing**: Backend initiates a **Durable Orchestration** (`emailOrchestrator`).
+5. **Orchestrator Execution**: The Durable Orchestrator loops through campaign contacts sequentially, calling `sendEmailActivity` and yielding a **Durable Timer** for a 200ms delay to prevent rate limit issues.
+6. **Activity Execution**: `sendEmailActivity` renders the HTML body using Handlebars, delivers the mail via AWS SES (with Nodemailer SMTP fallback), and updates the status directly in Postgres. In case of transient failures, it retries up to 3 times with a delay.
+7. **Live Report**: The upload details page tracks sent, failed, pending, and skipped counts in real-time.
 
 ---
 
 ## 📁 Project Structure
 
 ```
-├── docker-compose.yml
 ├── README.md
 ├── frontend/
-│   ├── Dockerfile
-│   ├── nginx.conf
 │   ├── package.json
 │   ├── tailwind.config.js
 │   ├── vite.config.ts
@@ -202,33 +171,28 @@ npm run dev
 │       ├── App.tsx
 │       └── main.tsx
 └── backend/
-    ├── Dockerfile
+    ├── host.json
+    ├── local.settings.json
     ├── package.json
-    ├── nest-cli.json
     ├── prisma/
     │   ├── schema.prisma
-    │   └── seed.ts
+    │   └── seed.js       # JS database seeder
     └── src/
-        ├── auth/         # JWT authentication
-        ├── uploads/      # Upload parsing & sending execution
-        ├── contacts/     # Contacts retrieval
-        ├── templates/    # Templates CRUD
-        ├── email/        # SES + SMTP drivers
-        ├── queue/        # BullMQ email queue processor
-        ├── unsubscribe/  # Unsubscribe endpoints
-        ├── common/       # Prisma service, JWT guards
-        ├── app.module.ts
-        └── main.ts
+        ├── auth.js       # JWT & password bcrypt helper
+        ├── email.js      # SES + SMTP delivery engine
+        ├── prisma.js     # PrismaClient instantiation
+        ├── templates-service.js # Handlebars compiler
+        └── index.js      # Serverless HTTP endpoints, Durable Orchestrators, and Activities
 ```
 
 ---
 
 ## ⚠️ Production Notes
 
-- Always use BullMQ queue for email sending (never send directly in API handlers).
+- Emails are processed sequentially using Azure Durable Functions.
 - All emails include an unsubscribe link.
-- Failed emails are retried up to 3 times with exponential backoff.
-- 200ms delay between emails to respect rate limits.
+- Failed emails are retried up to 3 times.
+- 200ms rate limiting delay between emails.
 - Duplicate emails are automatically removed during upload.
 - Unsubscribed emails are automatically skipped.
 

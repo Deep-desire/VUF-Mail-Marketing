@@ -6,6 +6,7 @@ interface Props {
   icon: ReactNode;
   color: 'indigo' | 'emerald' | 'amber' | 'rose';
   subtitle?: string;
+  onClick?: () => void;
 }
 
 const colorMap = {
@@ -35,13 +36,16 @@ const colorMap = {
   },
 };
 
-export default function StatsCard({ title, value, icon, color, subtitle }: Props) {
+export default function StatsCard({ title, value, icon, color, subtitle, onClick }: Props) {
   const c = colorMap[color];
 
   return (
     <div
+      onClick={onClick}
       className={`glass-card bg-gradient-to-br ${c.bg} border ${c.border} p-6 shadow-lg ${c.glow} 
-                  transition-all duration-300 hover:scale-[1.02] hover:shadow-xl`}
+                  transition-all duration-300 hover:scale-[1.02] hover:shadow-xl ${
+                    onClick ? 'cursor-pointer select-none active:scale-[0.98]' : ''
+                  }`}
     >
       <div className="flex items-start justify-between">
         <div>

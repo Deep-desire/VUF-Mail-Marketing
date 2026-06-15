@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Upload, FileText, Send, AlertTriangle } from 'lucide-react';
 import StatsCard from '../components/StatsCard';
 import { uploadApi } from '../api/upload.api';
 import { DashboardStats } from '../types';
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -45,12 +47,14 @@ export default function Dashboard() {
             value={stats.totalUploads}
             icon={<Upload className="w-6 h-6" />}
             color="indigo"
+            onClick={() => navigate('/uploads')}
           />
           <StatsCard
             title="Templates"
             value={stats.totalTemplates}
             icon={<FileText className="w-6 h-6" />}
             color="amber"
+            onClick={() => navigate('/templates')}
           />
           <StatsCard
             title="Emails Sent"
@@ -71,7 +75,7 @@ export default function Dashboard() {
       <div>
         <h2 className="section-title mb-4">Quick Actions</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <a href="/uploads/new" className="glass-card-hover p-6 group block">
+          <a href="/uploads" className="glass-card-hover p-6 group block">
             <Upload className="w-8 h-8 text-brand-400 mb-3 transition-transform group-hover:scale-110" />
             <h3 className="font-semibold text-white">Upload Contacts</h3>
             <p className="text-sm text-gray-500 mt-1">Upload an Excel file with contacts</p>

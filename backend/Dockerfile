@@ -1,22 +1,12 @@
-# Build stage
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npx prisma generate
-RUN npm run build
+FROM mcr.microsoft.com/azure-functions/node:4-node20
 
-# Production stage
-FROM node:20-alpine AS production
-WORKDIR /app
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/entrypoint.sh ./entrypoint.sh
+ENV AzureWebJobsScriptRoot=/home/site/wwwroot \
+    AzureFunctionsJobHost__Logging__Console__IsEnabled=true
 
-RUN mkdir -p /app/uploads && chmod +x /app/entrypoint.sh
+COPY . /home/site/wwwroot
 
-EXPOSE 3000
-CMD ["sh", "./entrypoint.sh"]
+RUN cd /home/site/wwwroot && \
+    npm install --production && \
+    npx prisma generate
+
+EXPOSE 80

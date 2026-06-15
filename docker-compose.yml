@@ -1,17 +1,14 @@
 version: '3.8'
 
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: vuf-redis
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    container_name: vuf-azurite
     restart: unless-stopped
     ports:
-      - '6379:6379'
-    healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - '10000:10000'
+      - '10001:10001'
+      - '10002:10002'
 
   backend:
     build:
@@ -20,13 +17,11 @@ services:
     container_name: vuf-backend
     restart: unless-stopped
     depends_on:
-      redis:
-        condition: service_healthy
+      - azurite
     environment:
       DATABASE_URL: ${DATABASE_URL}
       DIRECT_URL: ${DIRECT_URL}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      AzureWebJobsStorage: DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;QueueEndpoint=http://azurite:10001/devstoreaccount1;TableEndpoint=http://azurite:10002/devstoreaccount1;
       JWT_SECRET: vuf-jwt-secret-change-in-production
       JWT_EXPIRES_IN: 24h
       AWS_REGION: ap-south-1
@@ -38,11 +33,8 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       FRONTEND_URL: http://localhost
-      APP_PORT: 3000
     ports:
-      - '3000:3000'
-    volumes:
-      - uploads:/app/uploads
+      - '7071:80'
 
   frontend:
     build:
@@ -54,6 +46,3 @@ services:
       - backend
     ports:
       - '80:80'
-
-volumes:
-  uploads:
