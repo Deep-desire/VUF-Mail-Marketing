@@ -336,6 +336,9 @@ app.http('api', {
           input: {
             uploadId: id,
             templateId,
+            templateSubject: template.subject,
+            templateHtmlBody: template.htmlBody,
+            templatePlainTextBody: template.plainTextBody,
             contacts: queuedContacts.map((c) => ({ id: c.id, email: c.email, name: c.name })),
           },
         });
@@ -620,77 +623,74 @@ app.http('api', {
 // --- 2. Durable Orchestrator ---
 df.app.orchestration('emailOrchestrator', function* (context) {
   const input = context.df.getInput();
-  const { uploadId, templateId, contacts } = input;
+  const { uploadId, templateId, templateSubject, templateHtmlBody, templatePlainTextBody, contacts } = input;
 
-  for (let i = 0; i < contacts.length; i++) {
-    const contact = contacts[i];
+  const batchSize = 10; // Send 10 emails concurrently per batch
 
-    // Trigger sending activity
-    yield context.df.callActivity('sendEmailActivity', {
+  for (let i = 0; i < contacts.length; i += batchSize) {
+    const batch = contacts.slice(i, i + batchSize);
+
+    // Call sending activities concurrently
+    const tasks = batch.map((contact) =>
+      context.df.callActivity('sendEmailActivity', {
+        uploadId,
+        contactId: contact.id,
+        email: contact.email,
+        name: contact.name,
+        templateSubject,
+        templateHtmlBody,
+        templatePlainTextBody,
+      })
+    );
+
+    const results = yield context.df.Task.all(tasks);
+
+    // Accumulate results for the batch
+    let sentCount = 0;
+    let failedCount = 0;
+    for (const res of results) {
+      if (res) {
+        if (res.status === 'sent') sentCount++;
+        if (res.status === 'failed') failedCount++;
+      }
+    }
+
+    // Update upload stats in one query for this batch
+    yield context.df.callActivity('updateUploadStatsActivity', {
       uploadId,
-      contactId: contact.id,
-      templateId,
+      sentCount,
+      failedCount,
+      pendingDecrement: batch.length,
     });
 
-    // Enforce 200ms rate limiting delay
-    const nextFireAt = new Date(context.df.currentUtcDateTime.getTime() + 200);
+    // Short timer between batches to be respectful to SMTP / SES rate limits
+    const nextFireAt = new Date(context.df.currentUtcDateTime.getTime() + 1000);
     yield context.df.createTimer(nextFireAt);
   }
+
+  // Final check and complete status
+  yield context.df.callActivity('finalizeUploadActivity', { uploadId });
 });
 
-// --- 3. Durable Activity ---
+// --- 3. Durable Activities ---
+
+// Activity to send email to a single contact
 df.app.activity('sendEmailActivity', {
   handler: async (input, context) => {
-    const { uploadId, contactId, templateId } = input;
-    context.log(`[Activity Invoked] Sending email for contact ${contactId}`);
-
-    const contact = await prisma.contact.findUnique({
-      where: { id: contactId },
-    });
-
-    if (!contact || contact.deliveryStatus === 'sent' || contact.deliveryStatus === 'skipped') {
-      return;
-    }
-
-    // Double check unsubscribed list
-    const isUnsubscribed = await prisma.unsubscribed.findUnique({
-      where: { email: contact.email },
-    });
-
-    if (isUnsubscribed) {
-      await prisma.contact.update({
-        where: { id: contactId },
-        data: { deliveryStatus: 'skipped', deliveryError: 'Email is unsubscribed' },
-      });
-      await prisma.upload.update({
-        where: { id: uploadId },
-        data: {
-          skippedCount: { increment: 1 },
-          pendingCount: { decrement: 1 },
-        },
-      });
-      await checkUploadCompletion(uploadId);
-      return;
-    }
-
-    const template = await prisma.template.findUnique({
-      where: { id: templateId },
-    });
-    if (!template) {
-      throw new Error(`Template ${templateId} not found`);
-    }
+    const { uploadId, contactId, email, name, templateSubject, templateHtmlBody, templatePlainTextBody } = input;
+    context.log(`[Activity Invoked] Sending email to ${email} (contact ${contactId})`);
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     const token = crypto
       .createHash('sha256')
-      .update(contact.email + 'vuf-unsubscribe-salt')
+      .update(email + 'vuf-unsubscribe-salt')
       .digest('hex')
       .substring(0, 32);
     const unsubscribeLink = `${frontendUrl}/unsubscribe/${token}`;
 
     const rendered = renderTemplate(
-      { subject: template.subject, htmlBody: template.htmlBody, plainTextBody: template.plainTextBody },
-      { name: contact.name, email: contact.email, unsubscribeLink }
+      { subject: templateSubject, htmlBody: templateHtmlBody, plainTextBody: templatePlainTextBody },
+      { name, email, unsubscribeLink }
     );
 
     let attempts = 0;
@@ -699,14 +699,14 @@ df.app.activity('sendEmailActivity', {
 
     while (attempts < maxAttempts) {
       try {
-        const result = await sendEmail({
-          to: contact.email,
+        await sendEmail({
+          to: email,
           subject: rendered.subject,
           html: rendered.html,
           text: rendered.text,
         });
 
-        // Log success in DB
+        // Log success in DB for this contact
         await prisma.contact.update({
           where: { id: contactId },
           data: {
@@ -716,21 +716,12 @@ df.app.activity('sendEmailActivity', {
           },
         });
 
-        await prisma.upload.update({
-          where: { id: uploadId },
-          data: {
-            sentCount: { increment: 1 },
-            pendingCount: { decrement: 1 },
-          },
-        });
-
-        console.log(`[Success] Email successfully sent to ${contact.email}`);
-        await checkUploadCompletion(uploadId);
-        return;
+        console.log(`[Success] Email successfully sent to ${email}`);
+        return { status: 'sent' };
       } catch (err) {
         attempts++;
         lastError = err;
-        console.warn(`[Retry Warning] Attempt ${attempts} failed for ${contact.email}: ${err.message}`);
+        console.warn(`[Retry Warning] Attempt ${attempts} failed for ${email}: ${err.message}`);
         if (attempts < maxAttempts) {
           await new Promise((resolve) => setTimeout(resolve, 2000));
         }
@@ -738,7 +729,7 @@ df.app.activity('sendEmailActivity', {
     }
 
     // All retries failed - log permanent failure in DB
-    console.error(`[Permanent Failure] Failed to send email to ${contact.email} after ${maxAttempts} attempts`);
+    console.error(`[Permanent Failure] Failed to send email to ${email} after ${maxAttempts} attempts`);
     await prisma.contact.update({
       where: { id: contactId },
       data: {
@@ -747,14 +738,32 @@ df.app.activity('sendEmailActivity', {
       },
     });
 
+    return { status: 'failed' };
+  },
+});
+
+// Activity to update upload statistics for a batch
+df.app.activity('updateUploadStatsActivity', {
+  handler: async (input, context) => {
+    const { uploadId, sentCount, failedCount, pendingDecrement } = input;
+    context.log(`[Stats Update] Updating upload ${uploadId}: +${sentCount} sent, +${failedCount} failed`);
+
     await prisma.upload.update({
       where: { id: uploadId },
       data: {
-        failedCount: { increment: 1 },
-        pendingCount: { decrement: 1 },
+        sentCount: { increment: sentCount },
+        failedCount: { increment: failedCount },
+        pendingCount: { decrement: pendingDecrement },
       },
     });
+  },
+});
 
+// Activity to finalize the upload status
+df.app.activity('finalizeUploadActivity', {
+  handler: async (input, context) => {
+    const { uploadId } = input;
+    context.log(`[Finalize Campaign] Finalizing status for upload ${uploadId}`);
     await checkUploadCompletion(uploadId);
   },
 });

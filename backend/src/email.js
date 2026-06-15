@@ -12,13 +12,21 @@ const SMTP_USER = process.env.SMTP_USER || '';
 const SMTP_PASS = process.env.SMTP_PASS || '';
 
 // Initialize AWS SES Client
-const sesClient = new SESClient({
+const isSesConfigured = 
+  AWS_ACCESS_KEY_ID && 
+  AWS_ACCESS_KEY_ID !== 'your-access-key' && 
+  AWS_ACCESS_KEY_ID.trim() !== '' &&
+  AWS_SECRET_ACCESS_KEY && 
+  AWS_SECRET_ACCESS_KEY !== 'your-secret-key' && 
+  AWS_SECRET_ACCESS_KEY.trim() !== '';
+
+const sesClient = isSesConfigured ? new SESClient({
   region: AWS_REGION,
   credentials: {
     accessKeyId: AWS_ACCESS_KEY_ID,
     secretAccessKey: AWS_SECRET_ACCESS_KEY,
   },
-});
+}) : null;
 
 // Initialize NodeMailer SMTP Transporter fallback
 const smtpTransporter = nodemailer.createTransport({
@@ -32,6 +40,9 @@ const smtpTransporter = nodemailer.createTransport({
 });
 
 async function sendViaSES(options) {
+  if (!sesClient) {
+    throw new Error('SES client is not initialized');
+  }
   const command = new SendEmailCommand({
     Source: SES_FROM_EMAIL,
     Destination: {
@@ -71,14 +82,16 @@ async function sendViaSMTP(options) {
 }
 
 async function sendEmail(options) {
-  try {
-    const messageId = await sendViaSES(options);
-    console.log(`Email sent via SES to ${options.to}: ${messageId}`);
-    return { messageId, provider: 'ses' };
-  } catch (sesError) {
-    console.warn(
-      `SES failed for ${options.to}: ${sesError.message}. Falling back to SMTP.`,
-    );
+  if (isSesConfigured) {
+    try {
+      const messageId = await sendViaSES(options);
+      console.log(`Email sent via SES to ${options.to}: ${messageId}`);
+      return { messageId, provider: 'ses' };
+    } catch (sesError) {
+      console.warn(
+        `SES failed for ${options.to}: ${sesError.message}. Falling back to SMTP.`,
+      );
+    }
   }
 
   try {
@@ -87,10 +100,10 @@ async function sendEmail(options) {
     return { messageId, provider: 'smtp' };
   } catch (smtpError) {
     console.error(
-      `SMTP also failed for ${options.to}: ${smtpError.message}`,
+      `SMTP failed for ${options.to}: ${smtpError.message}`,
     );
     throw new Error(
-      `All email providers failed: SES and SMTP both returned errors. (SMTP Error: ${smtpError.message})`,
+      `All email providers failed. SMTP Error: ${smtpError.message}`,
     );
   }
 }
