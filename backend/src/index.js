@@ -295,27 +295,22 @@ app.http('api', {
 
         const unsubscribed = await prisma.unsubscribed.findMany();
         const unsubscribedSet = new Set(unsubscribed.map((u) => u.email.toLowerCase()));
+        const unsubscribedArray = [...unsubscribedSet];
 
-        let pendingCount = 0;
-        let skippedCount = 0;
+        // Batch update all contacts in 2 queries instead of N individual updates
+        const [skippedResult, pendingResult] = await Promise.all([
+          prisma.contact.updateMany({
+            where: { uploadId: id, status: 'valid', email: { in: unsubscribedArray } },
+            data: { deliveryStatus: 'skipped', deliveryError: 'Email is unsubscribed' },
+          }),
+          prisma.contact.updateMany({
+            where: { uploadId: id, status: 'valid', email: { notIn: unsubscribedArray } },
+            data: { deliveryStatus: 'pending' },
+          }),
+        ]);
 
-        // Sync local states
-        for (const contact of contacts) {
-          const isUnsubscribed = unsubscribedSet.has(contact.email.toLowerCase());
-          if (isUnsubscribed) {
-            skippedCount++;
-            await prisma.contact.update({
-              where: { id: contact.id },
-              data: { deliveryStatus: 'skipped', deliveryError: 'Email is unsubscribed' },
-            });
-          } else {
-            pendingCount++;
-            await prisma.contact.update({
-              where: { id: contact.id },
-              data: { deliveryStatus: 'pending' },
-            });
-          }
-        }
+        const skippedCount = skippedResult.count;
+        const pendingCount = pendingResult.count;
 
         await prisma.upload.update({
           where: { id },
@@ -625,7 +620,7 @@ df.app.orchestration('emailOrchestrator', function* (context) {
   const input = context.df.getInput();
   const { uploadId, templateId, templateSubject, templateHtmlBody, templatePlainTextBody, contacts } = input;
 
-  const batchSize = 10; // Send 10 emails concurrently per batch
+  const batchSize = parseInt(process.env.BATCH_SIZE || '25', 10);
 
   for (let i = 0; i < contacts.length; i += batchSize) {
     const batch = contacts.slice(i, i + batchSize);
@@ -663,8 +658,8 @@ df.app.orchestration('emailOrchestrator', function* (context) {
       pendingDecrement: batch.length,
     });
 
-    // Short timer between batches to be respectful to SMTP / SES rate limits
-    const nextFireAt = new Date(context.df.currentUtcDateTime.getTime() + 1000);
+    // Short timer between batches to respect SMTP / SES rate limits
+    const nextFireAt = new Date(context.df.currentUtcDateTime.getTime() + 200);
     yield context.df.createTimer(nextFireAt);
   }
 

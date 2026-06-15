@@ -28,11 +28,14 @@ const sesClient = isSesConfigured ? new SESClient({
   },
 }) : null;
 
-// Initialize NodeMailer SMTP Transporter fallback
+// Initialize NodeMailer SMTP Transporter with connection pooling
 const smtpTransporter = nodemailer.createTransport({
   host: SMTP_HOST,
   port: SMTP_PORT,
   secure: false,
+  pool: true,           // Reuse TCP connections across emails
+  maxConnections: 5,    // 5 concurrent SMTP connections
+  maxMessages: 100,     // Recycle connection after 100 messages
   auth: {
     user: SMTP_USER,
     pass: SMTP_PASS,
