@@ -60,6 +60,10 @@ model Contact {
 
   createdAt DateTime @default(now()) @map("created_at")
 
+  @@index([uploadId])
+  @@index([uploadId, status])
+  @@index([uploadId, deliveryStatus])
+  @@index([email])
   @@map("contacts")
 }
 

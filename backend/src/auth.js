@@ -18,8 +18,14 @@ async function comparePassword(password, hash) {
   return bcrypt.compare(password, hash);
 }
 
-async function authenticate(request) {
-  const authHeader = request.headers.get('authorization');
+async function authenticate(req) {
+  let authHeader;
+  if (req.headers && typeof req.headers.get === 'function') {
+    authHeader = req.headers.get('authorization');
+  } else if (req.headers) {
+    authHeader = req.headers.authorization || req.headers['authorization'];
+  }
+
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     throw new Error('Unauthorized');
   }

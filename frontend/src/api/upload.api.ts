@@ -22,7 +22,19 @@ export const uploadApi = {
   getDashboardStats: () => api.get<DashboardStats>('/uploads/stats/dashboard'),
 
   startSend: (id: string, templateId: string) =>
-    api.post<{ message: string }>(`/uploads/${id}/send`, { templateId }),
+    api.post<{
+      message: string;
+      totalCount: number;
+      queuedCount: number;
+      skippedCount: number;
+      queuedContacts: Array<{ id: string; name: string; email: string }>;
+    }>(`/uploads/${id}/send`, { templateId }),
+
+  sendBatch: (id: string, data: { templateId: string; contactIds: string[] }) =>
+    api.post<{ sent: number; failed: number }>(`/uploads/${id}/send-batch`, data),
+
+  finalizeSend: (id: string) =>
+    api.post<{ status: string }>(`/uploads/${id}/finalize`),
 
   update: (id: string, data: Partial<{ fileName: string; originalName: string }>) =>
     api.put<Upload>(`/uploads/${id}`, data),

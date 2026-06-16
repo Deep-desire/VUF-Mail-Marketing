@@ -37,6 +37,7 @@ export default function UploadDetails() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [sending, setSending] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; active: boolean } | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [iframeHeight, setIframeHeight] = useState('400px');
@@ -252,12 +253,58 @@ export default function UploadDetails() {
     if (!id || !selectedTemplateId) return;
     setSending(true);
     try {
-      await uploadApi.startSend(id, selectedTemplateId);
-      toast.success('Email sending initiated!');
+      const response = await uploadApi.startSend(id, selectedTemplateId);
+      const { queuedContacts } = response.data;
+
       setIsSendModalOpen(false);
+
+      if (queuedContacts && queuedContacts.length > 0) {
+        const batchSize = 25;
+        const batches = [];
+        for (let i = 0; i < queuedContacts.length; i += batchSize) {
+          batches.push(queuedContacts.slice(i, i + batchSize));
+        }
+
+        setBatchProgress({ current: 0, total: batches.length, active: true });
+
+        // Optimistically update status to processing locally so it shows immediately
+        if (upload) {
+          setUpload({ ...upload, status: 'processing' });
+        }
+
+        for (let i = 0; i < batches.length; i++) {
+          const batch = batches[i];
+          const contactIds = batch.map((c) => c.id);
+
+          await uploadApi.sendBatch(id, {
+            templateId: selectedTemplateId,
+            contactIds,
+          });
+
+          setBatchProgress({ current: i + 1, total: batches.length, active: true });
+          
+          // Refresh list / stats in background
+          fetchDetails();
+
+          // Sleep 200ms between batches to honor rate limits
+          if (i < batches.length - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 200));
+          }
+        }
+
+        const finalizeRes = await uploadApi.finalizeSend(id);
+        toast.success(`Email sending completed! Status: ${finalizeRes.data.status}`);
+      } else {
+        await uploadApi.finalizeSend(id);
+        toast.success('Campaign finalized (all contacts skipped or unsubscribed).');
+      }
+
+      setBatchProgress(null);
       fetchDetails();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Failed to initiate send');
+      setBatchProgress(null);
+      fetchDetails();
     } finally {
       setSending(false);
     }
@@ -305,12 +352,24 @@ export default function UploadDetails() {
       </div>
 
       {/* Processing indicator */}
-      {upload.status === 'processing' && (
-        <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex items-center gap-3">
-          <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
-          <p className="text-sm text-blue-400">
-            Sending emails in progress... Page will auto-refresh every 5 seconds.
-          </p>
+      {(upload.status === 'processing' || (batchProgress && batchProgress.active)) && (
+        <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 space-y-3">
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+            <p className="text-sm text-blue-400 font-medium">
+              {batchProgress && batchProgress.active
+                ? `Sending emails... Batch ${batchProgress.current} of ${batchProgress.total} completed.`
+                : 'Sending emails in progress...'}
+            </p>
+          </div>
+          {batchProgress && batchProgress.active && (
+            <div className="w-full bg-white/5 rounded-full h-2 overflow-hidden border border-white/5">
+              <div
+                className="bg-brand-500 h-full transition-all duration-300 rounded-full"
+                style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}
+              />
+            </div>
+          )}
         </div>
       )}
 
