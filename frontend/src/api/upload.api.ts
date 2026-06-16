@@ -46,4 +46,15 @@ export const uploadApi = {
 
   deleteContact: (id: string) =>
     api.delete<{ message: string }>(`/contacts/${id}`),
+
+  getStats: (id: string) =>
+    api.get<{
+      id: string;
+      status: string;
+      totalCount: number;
+      sentCount: number;
+      failedCount: number;
+      pendingCount: number;
+      skippedCount: number;
+    }>(`/uploads/${id}/stats`),
 };

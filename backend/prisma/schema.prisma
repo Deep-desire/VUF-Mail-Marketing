@@ -41,6 +41,8 @@ model Upload {
   templateId   String?   @map("template_id")
   template     Template? @relation(fields: [templateId], references: [id])
 
+  @@index([status])
+  @@index([createdAt])
   @@map("uploads")
 }
 
@@ -63,7 +65,10 @@ model Contact {
   @@index([uploadId])
   @@index([uploadId, status])
   @@index([uploadId, deliveryStatus])
+  @@index([uploadId, deliveryStatus, status])
   @@index([email])
+  @@index([sentAt])
+  @@index([deliveryStatus])
   @@map("contacts")
 }
 

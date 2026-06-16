@@ -1,13 +1,27 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
+
+// Eagerly load Login and Unsubscribe — they're the entry points, no benefit from lazy loading
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import UploadExcel from './pages/UploadExcel';
-import UploadDetails from './pages/UploadDetails';
-import Templates from './pages/Templates';
-import CreateTemplate from './pages/CreateTemplate';
 import Unsubscribe from './pages/Unsubscribe';
+
+// Lazy-load all authenticated pages so the initial bundle stays small
+const Dashboard     = lazy(() => import('./pages/Dashboard'));
+const UploadExcel   = lazy(() => import('./pages/UploadExcel'));
+const UploadDetails = lazy(() => import('./pages/UploadDetails'));
+const Templates     = lazy(() => import('./pages/Templates'));
+const CreateTemplate = lazy(() => import('./pages/CreateTemplate'));
+
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center h-64">
+      <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
+    </div>
+  );
+}
 
 function App() {
   return (
@@ -22,12 +36,30 @@ function App() {
           </ProtectedRoute>
         }
       >
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/uploads" element={<UploadExcel />} />
-        <Route path="/uploads/:id" element={<UploadDetails />} />
-        <Route path="/templates" element={<Templates />} />
-        <Route path="/templates/create" element={<CreateTemplate />} />
-        <Route path="/templates/:id/edit" element={<CreateTemplate />} />
+        <Route
+          path="/dashboard"
+          element={<Suspense fallback={<PageLoader />}><Dashboard /></Suspense>}
+        />
+        <Route
+          path="/uploads"
+          element={<Suspense fallback={<PageLoader />}><UploadExcel /></Suspense>}
+        />
+        <Route
+          path="/uploads/:id"
+          element={<Suspense fallback={<PageLoader />}><UploadDetails /></Suspense>}
+        />
+        <Route
+          path="/templates"
+          element={<Suspense fallback={<PageLoader />}><Templates /></Suspense>}
+        />
+        <Route
+          path="/templates/create"
+          element={<Suspense fallback={<PageLoader />}><CreateTemplate /></Suspense>}
+        />
+        <Route
+          path="/templates/:id/edit"
+          element={<Suspense fallback={<PageLoader />}><CreateTemplate /></Suspense>}
+        />
       </Route>
 
       <Route path="/" element={<Navigate to="/dashboard" replace />} />

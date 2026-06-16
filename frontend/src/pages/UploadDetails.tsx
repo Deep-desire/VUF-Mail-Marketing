@@ -225,11 +225,22 @@ export default function UploadDetails() {
 
   useEffect(() => {
     if (!id) return;
-    
-    // Auto-refresh while processing
-    const interval = setInterval(() => {
-      if (upload?.status === 'processing') {
-        fetchDetails();
+
+    // While processing: poll only the tiny stats endpoint (no contacts list).
+    // When the campaign finishes, do one full fetchDetails to sync final state.
+    const interval = setInterval(async () => {
+      if (upload?.status !== 'processing') return;
+      try {
+        const statsRes = await uploadApi.getStats(id);
+        const stats = statsRes.data;
+        setUpload((prev) =>
+          prev ? { ...prev, ...stats, status: stats.status as Upload['status'] } : prev
+        );
+        if (stats.status === 'completed' || stats.status === 'failed') {
+          fetchDetails();
+        }
+      } catch (_err) {
+        // silently ignore transient poll errors
       }
     }, 5000);
     return () => clearInterval(interval);
