@@ -492,7 +492,7 @@ app.http('api', {
         }
 
         const oldEmail = contact.email;
-        const newEmail = email !== undefined ? email.trim() : contact.email;
+        const newEmail = email !== undefined ? email.trim().toLowerCase() : contact.email;
         const newName = name !== undefined ? name.trim() : contact.name;
 
         // Perform validation for the updated contact
