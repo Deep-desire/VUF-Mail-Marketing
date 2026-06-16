@@ -124,10 +124,11 @@ const catchAsync = (fn) => (req, res, next) => {
   fn(req, res, next).catch(next);
 };
 
-// --- REST Endpoints ---
+// --- API Router Definition ---
+const apiRouter = express.Router();
 
 // POST /auth/login
-app.post('/api/auth/login', catchAsync(async (req, res) => {
+apiRouter.post('/auth/login', catchAsync(async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ message: 'Email and password are required' });
@@ -157,7 +158,7 @@ app.post('/api/auth/login', catchAsync(async (req, res) => {
 }));
 
 // GET /auth/me
-app.get('/api/auth/me', catchAsync(async (req, res) => {
+apiRouter.get('/auth/me', catchAsync(async (req, res) => {
   const user = await authenticate(req);
   const admin = await prisma.admin.findUnique({
     where: { id: user.id },
@@ -170,7 +171,7 @@ app.get('/api/auth/me', catchAsync(async (req, res) => {
 }));
 
 // GET /uploads/stats/dashboard
-app.get('/api/uploads/stats/dashboard', catchAsync(async (req, res) => {
+apiRouter.get('/uploads/stats/dashboard', catchAsync(async (req, res) => {
   await authenticate(req);
   const [totalUploads, totalTemplates, totalEmailsSent, totalFailedEmails] = await Promise.all([
     prisma.upload.count(),
@@ -187,7 +188,7 @@ app.get('/api/uploads/stats/dashboard', catchAsync(async (req, res) => {
 }));
 
 // GET /uploads
-app.get('/api/uploads', catchAsync(async (req, res) => {
+apiRouter.get('/uploads', catchAsync(async (req, res) => {
   await authenticate(req);
   const uploads = await prisma.upload.findMany({
     include: { template: true },
@@ -197,7 +198,7 @@ app.get('/api/uploads', catchAsync(async (req, res) => {
 }));
 
 // POST /uploads/excel (using multer storage middleware)
-app.post('/api/uploads/excel', uploadMiddleware.single('file'), catchAsync(async (req, res) => {
+apiRouter.post('/uploads/excel', uploadMiddleware.single('file'), catchAsync(async (req, res) => {
   await authenticate(req);
   if (!req.file) {
     return res.status(400).json({ message: 'No file uploaded' });
@@ -291,7 +292,7 @@ app.post('/api/uploads/excel', uploadMiddleware.single('file'), catchAsync(async
 }));
 
 // POST /uploads/:id/send (Triggering Campaign send flow - Vercel Safe)
-app.post('/api/uploads/:id/send', catchAsync(async (req, res) => {
+apiRouter.post('/uploads/:id/send', catchAsync(async (req, res) => {
   const { id } = req.params;
   await authenticate(req);
   const { templateId } = req.body;
@@ -366,7 +367,7 @@ app.post('/api/uploads/:id/send', catchAsync(async (req, res) => {
 }));
 
 // POST /uploads/:id/send-batch (Sends a single batch of emails - Vercel Safe)
-app.post('/api/uploads/:id/send-batch', catchAsync(async (req, res) => {
+apiRouter.post('/uploads/:id/send-batch', catchAsync(async (req, res) => {
   const { id } = req.params;
   await authenticate(req);
   const { templateId, contactIds } = req.body;
@@ -480,7 +481,7 @@ app.post('/api/uploads/:id/send-batch', catchAsync(async (req, res) => {
 }));
 
 // POST /uploads/:id/finalize
-app.post('/api/uploads/:id/finalize', catchAsync(async (req, res) => {
+apiRouter.post('/uploads/:id/finalize', catchAsync(async (req, res) => {
   const { id } = req.params;
   await authenticate(req);
   const status = await checkUploadCompletion(id);
@@ -488,7 +489,7 @@ app.post('/api/uploads/:id/finalize', catchAsync(async (req, res) => {
 }));
 
 // GET /uploads/:id/contacts
-app.get('/api/uploads/:id/contacts', catchAsync(async (req, res) => {
+apiRouter.get('/uploads/:id/contacts', catchAsync(async (req, res) => {
   const { id } = req.params;
   await authenticate(req);
   const page = parseInt(req.query.page || '1', 10);
@@ -515,7 +516,7 @@ app.get('/api/uploads/:id/contacts', catchAsync(async (req, res) => {
 }));
 
 // GET /uploads/:id
-app.get('/api/uploads/:id', catchAsync(async (req, res) => {
+apiRouter.get('/uploads/:id', catchAsync(async (req, res) => {
   const { id } = req.params;
   await authenticate(req);
   const upload = await prisma.upload.findUnique({
@@ -529,7 +530,7 @@ app.get('/api/uploads/:id', catchAsync(async (req, res) => {
 }));
 
 // PUT /uploads/:id
-app.put('/api/uploads/:id', catchAsync(async (req, res) => {
+apiRouter.put('/uploads/:id', catchAsync(async (req, res) => {
   const { id } = req.params;
   await authenticate(req);
   const { fileName, originalName } = req.body;
@@ -551,7 +552,7 @@ app.put('/api/uploads/:id', catchAsync(async (req, res) => {
 }));
 
 // DELETE /uploads/:id
-app.delete('/api/uploads/:id', catchAsync(async (req, res) => {
+apiRouter.delete('/uploads/:id', catchAsync(async (req, res) => {
   const { id } = req.params;
   await authenticate(req);
   const upload = await prisma.upload.findUnique({
@@ -567,7 +568,7 @@ app.delete('/api/uploads/:id', catchAsync(async (req, res) => {
 }));
 
 // PUT /contacts/:id
-app.put('/api/contacts/:id', catchAsync(async (req, res) => {
+apiRouter.put('/contacts/:id', catchAsync(async (req, res) => {
   const { id } = req.params;
   await authenticate(req);
   const { name, email } = req.body;
@@ -677,7 +678,7 @@ app.put('/api/contacts/:id', catchAsync(async (req, res) => {
 }));
 
 // DELETE /contacts/:id
-app.delete('/api/contacts/:id', catchAsync(async (req, res) => {
+apiRouter.delete('/contacts/:id', catchAsync(async (req, res) => {
   const { id } = req.params;
   await authenticate(req);
 
@@ -742,7 +743,7 @@ app.delete('/api/contacts/:id', catchAsync(async (req, res) => {
 }));
 
 // GET /templates
-app.get('/api/templates', catchAsync(async (req, res) => {
+apiRouter.get('/templates', catchAsync(async (req, res) => {
   await authenticate(req);
   const templates = await prisma.template.findMany({
     orderBy: { createdAt: 'desc' },
@@ -751,7 +752,7 @@ app.get('/api/templates', catchAsync(async (req, res) => {
 }));
 
 // POST /templates
-app.post('/api/templates', catchAsync(async (req, res) => {
+apiRouter.post('/templates', catchAsync(async (req, res) => {
   await authenticate(req);
   const { name, subject, htmlBody, plainTextBody } = req.body;
   if (!name || !subject || !htmlBody || !plainTextBody) {
@@ -769,7 +770,7 @@ app.post('/api/templates', catchAsync(async (req, res) => {
 }));
 
 // POST /templates/:id/test
-app.post('/api/templates/:id/test', catchAsync(async (req, res) => {
+apiRouter.post('/templates/:id/test', catchAsync(async (req, res) => {
   const { id } = req.params;
   await authenticate(req);
   const { testEmail } = req.body;
@@ -800,7 +801,7 @@ app.post('/api/templates/:id/test', catchAsync(async (req, res) => {
 }));
 
 // GET /templates/:id
-app.get('/api/templates/:id', catchAsync(async (req, res) => {
+apiRouter.get('/templates/:id', catchAsync(async (req, res) => {
   const { id } = req.params;
   await authenticate(req);
   const template = await prisma.template.findUnique({
@@ -813,7 +814,7 @@ app.get('/api/templates/:id', catchAsync(async (req, res) => {
 }));
 
 // PUT /templates/:id
-app.put('/api/templates/:id', catchAsync(async (req, res) => {
+apiRouter.put('/templates/:id', catchAsync(async (req, res) => {
   const { id } = req.params;
   await authenticate(req);
   const { name, subject, htmlBody, plainTextBody } = req.body;
@@ -837,7 +838,7 @@ app.put('/api/templates/:id', catchAsync(async (req, res) => {
 }));
 
 // DELETE /templates/:id
-app.delete('/api/templates/:id', catchAsync(async (req, res) => {
+apiRouter.delete('/templates/:id', catchAsync(async (req, res) => {
   const { id } = req.params;
   await authenticate(req);
   const template = await prisma.template.findUnique({
@@ -853,7 +854,7 @@ app.delete('/api/templates/:id', catchAsync(async (req, res) => {
 }));
 
 // GET /unsubscribe/:token
-app.get('/api/unsubscribe/:token', catchAsync(async (req, res) => {
+apiRouter.get('/unsubscribe/:token', catchAsync(async (req, res) => {
   const { token } = req.params;
   const existing = await prisma.unsubscribed.findUnique({
     where: { token },
@@ -872,7 +873,7 @@ app.get('/api/unsubscribe/:token', catchAsync(async (req, res) => {
 }));
 
 // POST /unsubscribe/:token
-app.post('/api/unsubscribe/:token', catchAsync(async (req, res) => {
+apiRouter.post('/unsubscribe/:token', catchAsync(async (req, res) => {
   const { token } = req.params;
   const { email } = req.body;
   if (!email) {
@@ -910,6 +911,10 @@ app.post('/api/unsubscribe/:token', catchAsync(async (req, res) => {
     email: maskEmail(email),
   });
 }));
+
+// --- Mount Router for Dual Path Support (/api and /) ---
+app.use('/api', apiRouter);
+app.use('/', apiRouter);
 
 // Global error handler middleware
 app.use((err, req, res, next) => {
