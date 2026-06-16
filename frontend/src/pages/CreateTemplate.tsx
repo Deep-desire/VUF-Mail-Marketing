@@ -81,7 +81,7 @@ export default function CreateTemplate() {
         <h1 className="page-title">{isEdit ? 'Edit Template' : 'Create Template'}</h1>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="max-w-4xl space-y-6">
+      <form onSubmit={handleSubmit(onSubmit)} className="max-w-6xl space-y-6">
         <div className="glass-card p-6 space-y-5">
           {/* Template Name */}
           <div>
