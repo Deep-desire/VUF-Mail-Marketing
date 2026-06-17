@@ -93,3 +93,4 @@ model Template {
 
   @@map("templates")
 }
+

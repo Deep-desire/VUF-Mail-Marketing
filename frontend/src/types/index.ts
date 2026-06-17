@@ -101,3 +101,4 @@ export interface DashboardStats {
   totalEmailsSent: number;
   totalFailedEmails: number;
 }
+

@@ -215,6 +215,8 @@ apiRouter.get('/auth/me', catchAsync(async (req, res) => {
   return res.status(200).json(admin);
 }));
 
+
+
 // GET /uploads/stats/dashboard
 apiRouter.get('/uploads/stats/dashboard', catchAsync(async (req, res) => {
   await authenticate(req);
