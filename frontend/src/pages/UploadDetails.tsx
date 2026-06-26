@@ -20,6 +20,7 @@ import toast from 'react-hot-toast';
 import ReportTable from '../components/ReportTable';
 import StatusBadge from '../components/StatusBadge';
 import StatsCard from '../components/StatsCard';
+import EmailDetailModal from '../components/EmailDetailModal';
 import { uploadApi } from '../api/upload.api';
 import { templateApi } from '../api/template.api';
 import { Upload, Contact, Template } from '../types';
@@ -31,6 +32,8 @@ export default function UploadDetails() {
   const [upload, setUpload] = useState<Upload | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deliveryStatusFilter, setDeliveryStatusFilter] = useState<'all' | 'sent' | 'failed' | 'pending' | 'skipped'>('all');
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
 
   // Send Modal States
   const [isSendModalOpen, setIsSendModalOpen] = useState(false);
@@ -106,6 +109,11 @@ export default function UploadDetails() {
     }
   };
 
+  const filteredContacts = useMemo(() => {
+    if (deliveryStatusFilter === 'all') return contacts;
+    return contacts.filter((c) => c.deliveryStatus === deliveryStatusFilter);
+  }, [contacts, deliveryStatusFilter]);
+
   const columns = useMemo(() => [
     columnHelper.accessor('name', {
       header: 'Name',
@@ -147,8 +155,17 @@ export default function UploadDetails() {
       cell: (info) => {
         const contact = info.row.original;
         const isProcessing = upload?.status === 'processing';
+        const isIdle = contact.deliveryStatus === 'idle';
         return (
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedContactId(contact.id)}
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 hover:text-brand-400 transition-colors text-gray-400 disabled:opacity-30 disabled:cursor-not-allowed"
+              disabled={isIdle}
+              title={isIdle ? "No sent template to preview" : "View Email Detail"}
+            >
+              <Eye className="w-4 h-4" />
+            </button>
             <button
               onClick={() => handleEditClick(contact)}
               className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 hover:text-brand-400 transition-colors text-gray-400 disabled:opacity-30 disabled:cursor-not-allowed"
@@ -399,37 +416,42 @@ export default function UploadDetails() {
       {/* Delivery Progress Stats */}
       {upload.status !== 'idle' && (
         <div className="space-y-2">
-          <h2 className="section-title text-sm text-gray-400">Delivery Status</h2>
+          <h2 className="section-title text-sm text-gray-400">Delivery Status (Click to filter)</h2>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <StatsCard
               title="Total Recipients"
               value={upload.totalCount}
               icon={<Mail className="w-5 h-5" />}
               color="indigo"
+              onClick={() => setDeliveryStatusFilter('all')}
             />
             <StatsCard
               title="Sent"
               value={upload.sentCount}
               icon={<Send className="w-5 h-5" />}
               color="emerald"
+              onClick={() => setDeliveryStatusFilter('sent')}
             />
             <StatsCard
               title="Failed"
               value={upload.failedCount}
               icon={<XCircle className="w-5 h-5" />}
               color="rose"
+              onClick={() => setDeliveryStatusFilter('failed')}
             />
             <StatsCard
               title="Pending"
               value={upload.pendingCount}
               icon={<Clock className="w-5 h-5" />}
               color="amber"
+              onClick={() => setDeliveryStatusFilter('pending')}
             />
             <StatsCard
               title="Skipped"
               value={upload.skippedCount}
               icon={<Ban className="w-5 h-5" />}
               color="indigo"
+              onClick={() => setDeliveryStatusFilter('skipped')}
             />
           </div>
         </div>
@@ -437,8 +459,25 @@ export default function UploadDetails() {
 
       {/* Contacts Table */}
       <div className="space-y-4">
-        <h2 className="section-title">Contacts List</h2>
-        <ReportTable data={contacts} columns={columns} pageSize={25} />
+        <div className="flex items-center justify-between">
+          <h2 className="section-title">
+            Contacts List{' '}
+            {deliveryStatusFilter !== 'all' && (
+              <span className="text-sm font-normal text-gray-400 capitalize">
+                ({deliveryStatusFilter} only)
+              </span>
+            )}
+          </h2>
+          {deliveryStatusFilter !== 'all' && (
+            <button
+              onClick={() => setDeliveryStatusFilter('all')}
+              className="text-xs font-semibold text-brand-400 hover:text-brand-300 transition-colors uppercase tracking-wider"
+            >
+              Clear Filter
+            </button>
+          )}
+        </div>
+        <ReportTable data={filteredContacts} columns={columns} pageSize={25} />
       </div>
 
       {/* Send Template Modal */}
@@ -814,6 +853,14 @@ export default function UploadDetails() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Email Detail Modal */}
+      {selectedContactId && (
+        <EmailDetailModal
+          contactId={selectedContactId}
+          onClose={() => setSelectedContactId(null)}
+        />
       )}
     </div>
   );

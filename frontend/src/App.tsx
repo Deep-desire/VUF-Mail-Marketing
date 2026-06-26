@@ -14,6 +14,7 @@ const UploadExcel   = lazy(() => import('./pages/UploadExcel'));
 const UploadDetails = lazy(() => import('./pages/UploadDetails'));
 const Templates     = lazy(() => import('./pages/Templates'));
 const CreateTemplate = lazy(() => import('./pages/CreateTemplate'));
+const Emails         = lazy(() => import('./pages/Emails'));
 
 function PageLoader() {
   return (
@@ -47,6 +48,10 @@ function App() {
         <Route
           path="/uploads/:id"
           element={<Suspense fallback={<PageLoader />}><UploadDetails /></Suspense>}
+        />
+        <Route
+          path="/emails"
+          element={<Suspense fallback={<PageLoader />}><Emails /></Suspense>}
         />
         <Route
           path="/templates"

@@ -5,12 +5,14 @@ import {
   FileText,
   LogOut,
   Mail,
+  Send,
 } from 'lucide-react';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/uploads', icon: Upload, label: 'Uploads' },
   { to: '/templates', icon: FileText, label: 'Templates' },
+  { to: '/emails', icon: Send, label: 'Delivery Log' },
 ];
 
 export default function Sidebar() {

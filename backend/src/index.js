@@ -660,6 +660,120 @@ apiRouter.delete('/contacts/:id', catchAsync(async (req, res) => {
   return res.status(200).json({ message: 'Contact deleted successfully' });
 }));
 
+// GET /contacts
+apiRouter.get('/contacts', catchAsync(async (req, res) => {
+  await authenticate(req);
+  const page = parseInt(req.query.page || '1', 10);
+  const limit = parseInt(req.query.limit || '50', 10);
+  const skip = (page - 1) * limit;
+  const { deliveryStatus, uploadId, search } = req.query;
+
+  const where = {};
+  if (deliveryStatus && deliveryStatus !== 'all') {
+    where.deliveryStatus = deliveryStatus;
+  }
+  if (uploadId) {
+    where.uploadId = uploadId;
+  }
+  if (search) {
+    where.OR = [
+      { name: { contains: search, mode: 'insensitive' } },
+      { email: { contains: search, mode: 'insensitive' } },
+    ];
+  }
+
+  const [contacts, total] = await Promise.all([
+    prisma.contact.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { sentAt: 'desc' },
+      include: {
+        upload: {
+          select: { originalName: true }
+        }
+      }
+    }),
+    prisma.contact.count({ where }),
+  ]);
+
+  return res.status(200).json({
+    contacts,
+    total,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit),
+  });
+}));
+
+// GET /contacts/:id/detail
+apiRouter.get('/contacts/:id/detail', catchAsync(async (req, res) => {
+  await authenticate(req);
+  const { id } = req.params;
+  const contact = await prisma.contact.findUnique({
+    where: { id },
+    include: {
+      upload: {
+        include: { template: true }
+      }
+    }
+  });
+  if (!contact) return res.status(404).json({ message: 'Contact not found' });
+
+  let subject = '';
+  let htmlBody = '';
+  let plainTextBody = '';
+  let templateName = '';
+
+  if (contact.upload && contact.upload.template) {
+    const template = contact.upload.template;
+    templateName = template.name;
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const token = crypto
+      .createHash('sha256')
+      .update(contact.email + 'vuf-unsubscribe-salt')
+      .digest('hex')
+      .substring(0, 32);
+    const unsubscribeLink = `${frontendUrl}/unsubscribe/${token}`;
+
+    const variables = { name: contact.name, email: contact.email, unsubscribeLink };
+    const rendered = renderTemplate(
+      { id: template.id, subject: template.subject, htmlBody: template.htmlBody, plainTextBody: template.plainTextBody },
+      variables
+    );
+    subject = rendered.subject;
+    htmlBody = rendered.html;
+    plainTextBody = rendered.text;
+  }
+
+  return res.status(200).json({
+    contact: {
+      id: contact.id,
+      name: contact.name,
+      email: contact.email,
+      status: contact.status,
+      error: contact.error,
+      createdAt: contact.createdAt,
+    },
+    delivery: {
+      status: contact.deliveryStatus,
+      error: contact.deliveryError,
+      sentAt: contact.sentAt,
+    },
+    template: {
+      id: contact.upload?.templateId || null,
+      name: templateName,
+      subject,
+      htmlBody,
+      plainTextBody,
+    },
+    upload: {
+      id: contact.uploadId,
+      fileName: contact.upload?.fileName,
+    }
+  });
+}));
+
 // GET /templates
 apiRouter.get('/templates', catchAsync(async (req, res) => {
   await authenticate(req);

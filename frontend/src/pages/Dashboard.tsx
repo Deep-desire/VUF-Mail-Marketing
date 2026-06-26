@@ -61,12 +61,14 @@ export default function Dashboard() {
             value={stats.totalEmailsSent}
             icon={<Send className="w-6 h-6" />}
             color="emerald"
+            onClick={() => navigate('/emails?status=sent')}
           />
           <StatsCard
             title="Failed Emails"
             value={stats.totalFailedEmails}
             icon={<AlertTriangle className="w-6 h-6" />}
             color="rose"
+            onClick={() => navigate('/emails?status=failed')}
           />
         </div>
       ) : null}

@@ -57,4 +57,47 @@ export const uploadApi = {
       pendingCount: number;
       skippedCount: number;
     }>(`/uploads/${id}/stats`),
+
+  getGlobalContacts: (params: {
+    page?: number;
+    limit?: number;
+    deliveryStatus?: string;
+    uploadId?: string;
+    search?: string;
+  }) =>
+    api.get<{
+      contacts: (Contact & { upload?: { originalName: string } })[];
+      total: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+    }>('/contacts', { params }),
+
+  getContactDetail: (id: string) =>
+    api.get<{
+      contact: {
+        id: string;
+        name: string;
+        email: string;
+        status: string;
+        error: string | null;
+        createdAt: string;
+      };
+      delivery: {
+        status: string;
+        error: string | null;
+        sentAt: string | null;
+      };
+      template: {
+        id: string | null;
+        name: string;
+        subject: string;
+        htmlBody: string;
+        plainTextBody: string;
+      };
+      upload: {
+        id: string;
+        fileName: string;
+      };
+    }>(`/contacts/${id}/detail`),
 };
