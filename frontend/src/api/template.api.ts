@@ -2,29 +2,22 @@ import api from './axios';
 import { Template } from '../types';
 
 export const templateApi = {
-  create: (data: {
-    name: string;
-    subject: string;
-    htmlBody: string;
-    plainTextBody: string;
-  }) => api.post<Template>('/templates', data),
+  create: (data: FormData) =>
+    api.post<Template>('/templates', data, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
 
   getAll: () => api.get<Template[]>('/templates'),
 
   getOne: (id: string) => api.get<Template>(`/templates/${id}`),
 
-  update: (
-    id: string,
-    data: Partial<{
-      name: string;
-      subject: string;
-      htmlBody: string;
-      plainTextBody: string;
-    }>,
-  ) => api.put<Template>(`/templates/${id}`, data),
+  update: (id: string, data: FormData) =>
+    api.put<Template>(`/templates/${id}`, data, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
 
   delete: (id: string) => api.delete(`/templates/${id}`),
 
-  sendTest: (id: string, testEmail: string) =>
-    api.post(`/templates/${id}/test`, { testEmail }),
+  sendTest: (id: string, testEmail: string, senderEmail?: string) =>
+    api.post(`/templates/${id}/test`, { testEmail, senderEmail }),
 };

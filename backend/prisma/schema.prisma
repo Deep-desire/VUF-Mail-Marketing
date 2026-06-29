@@ -82,15 +82,29 @@ model Unsubscribed {
 }
 
 model Template {
-  id            String   @id @default(uuid())
+  id            String       @id @default(uuid())
   name          String
   subject       String
-  htmlBody      String   @map("html_body")
-  plainTextBody String   @map("plain_text_body")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  htmlBody      String       @map("html_body")
+  plainTextBody String       @map("plain_text_body")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
   uploads       Upload[]
+  attachments   Attachment[]
 
   @@map("templates")
+}
+
+model Attachment {
+  id         String   @id @default(uuid())
+  name       String
+  path       String
+  mimeType   String   @map("mime_type")
+  size       Int
+  createdAt  DateTime @default(now()) @map("created_at")
+  templateId String   @map("template_id")
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@map("attachments")
 }
 

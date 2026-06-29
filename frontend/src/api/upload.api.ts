@@ -21,6 +21,8 @@ export const uploadApi = {
 
   getDashboardStats: () => api.get<DashboardStats>('/uploads/stats/dashboard'),
 
+  getSmtpSenders: () => api.get<string[]>('/smtp-senders'),
+
   startSend: (id: string, templateId: string, smtpConfigId?: string) =>
     api.post<{
       message: string;
@@ -30,7 +32,7 @@ export const uploadApi = {
       queuedContacts: Array<{ id: string; name: string; email: string }>;
     }>(`/uploads/${id}/send`, { templateId, smtpConfigId }),
 
-  sendBatch: (id: string, data: { templateId: string; contactIds: string[] }) =>
+  sendBatch: (id: string, data: { templateId: string; contactIds: string[]; senderEmail?: string }) =>
     api.post<{ sent: number; failed: number }>(`/uploads/${id}/send-batch`, data),
 
   finalizeSend: (id: string) =>

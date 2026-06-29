@@ -9,12 +9,12 @@ import Login from './pages/Login';
 import Unsubscribe from './pages/Unsubscribe';
 
 // Lazy-load all authenticated pages so the initial bundle stays small
-const Dashboard     = lazy(() => import('./pages/Dashboard'));
-const UploadExcel   = lazy(() => import('./pages/UploadExcel'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const UploadExcel = lazy(() => import('./pages/UploadExcel'));
 const UploadDetails = lazy(() => import('./pages/UploadDetails'));
-const Templates     = lazy(() => import('./pages/Templates'));
+const Templates = lazy(() => import('./pages/Templates'));
 const CreateTemplate = lazy(() => import('./pages/CreateTemplate'));
-const Emails         = lazy(() => import('./pages/Emails'));
+const Emails = lazy(() => import('./pages/Emails'));
 
 function PageLoader() {
   return (

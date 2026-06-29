@@ -46,10 +46,9 @@ export default function Sidebar() {
             key={item.to}
             to={item.to}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 group ${
-                isActive
-                  ? 'bg-brand-600/20 text-brand-400 border border-brand-500/20'
-                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              `flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 group ${isActive
+                ? 'bg-brand-600/20 text-brand-400 border border-brand-500/20'
+                : 'text-gray-400 hover:text-white hover:bg-white/5'
               }`
             }
           >

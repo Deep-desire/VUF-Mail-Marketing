@@ -4,9 +4,12 @@ const multer = require('multer');
 const crypto = require('crypto');
 const XLSX = require('xlsx');
 const rateLimit = require('express-rate-limit');
+const fs = require('fs');
+const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 const { prisma, ContactStatus } = require('./prisma');
 const { generateToken, comparePassword, hashPassword, authenticate } = require('./auth');
-const { sendEmail } = require('./email');
+const { sendEmail, smtpAccounts } = require('./email');
 const { renderTemplate, invalidateTemplate } = require('./templates-service');
 
 require('dotenv').config();
@@ -22,12 +25,49 @@ app.use(cors({
 }));
 
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 // Multer: memory storage, 10 MB hard cap
 const uploadMiddleware = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
 });
+
+// Ensure attachments folder exists
+const attachmentsDir = path.join(__dirname, '..', 'uploads', 'attachments');
+if (!fs.existsSync(attachmentsDir)) {
+  fs.mkdirSync(attachmentsDir, { recursive: true });
+}
+
+// Helper to save a file from memory buffer to local storage
+async function saveAttachment(file) {
+  const fileExt = path.extname(file.originalname);
+  const uniqueName = `${uuidv4()}${fileExt}`;
+  const relativePath = path.join('uploads', 'attachments', uniqueName);
+  const absolutePath = path.join(__dirname, '..', relativePath);
+
+  await fs.promises.writeFile(absolutePath, file.buffer);
+
+  return {
+    name: file.originalname,
+    path: relativePath.replace(/\\/g, '/'), // normalize windows path separators
+    mimeType: file.mimetype,
+    size: file.size,
+  };
+}
+
+// Helper to delete an attachment file from disk
+async function deleteAttachmentFile(relativePath) {
+  try {
+    const absolutePath = path.join(__dirname, '..', relativePath);
+    if (fs.existsSync(absolutePath)) {
+      await fs.promises.unlink(absolutePath);
+    }
+  } catch (err) {
+    console.error(`Failed to delete file on disk at ${relativePath}:`, err.message);
+  }
+}
+
 
 // --- Rate limiters ---
 const loginLimiter = rateLimit({
@@ -183,6 +223,13 @@ const apiRouter = express.Router();
 apiRouter.get('/health', catchAsync(async (_req, res) => {
   const dbOk = await prisma.$queryRaw`SELECT 1`.then(() => true).catch(() => false);
   res.status(dbOk ? 200 : 503).json({ status: dbOk ? 'ok' : 'degraded', db: dbOk });
+}));
+
+// GET /smtp-senders
+apiRouter.get('/smtp-senders', catchAsync(async (req, res) => {
+  await authenticate(req);
+  const senders = smtpAccounts.map((acc) => acc.user);
+  return res.status(200).json(senders);
 }));
 
 // POST /auth/login
@@ -397,13 +444,16 @@ apiRouter.post('/uploads/:id/send', catchAsync(async (req, res) => {
 apiRouter.post('/uploads/:id/send-batch', batchLimiter, catchAsync(async (req, res) => {
   const { id } = req.params;
   await authenticate(req);
-  const { templateId, contactIds } = req.body;
+  const { templateId, contactIds, senderEmail } = req.body;
 
   if (!Array.isArray(contactIds) || contactIds.length === 0) {
     return res.status(400).json({ message: 'contactIds must be a non-empty array' });
   }
 
-  const template = await prisma.template.findUnique({ where: { id: templateId } });
+  const template = await prisma.template.findUnique({
+    where: { id: templateId },
+    include: { attachments: true },
+  });
   if (!template) return res.status(404).json({ message: 'Template not found' });
 
   const contacts = await prisma.contact.findMany({
@@ -412,6 +462,13 @@ apiRouter.post('/uploads/:id/send-batch', batchLimiter, catchAsync(async (req, r
   if (contacts.length === 0) {
     return res.status(400).json({ message: 'No matching contacts found for the specified IDs' });
   }
+
+  // Map template attachments to absolute paths for Nodemailer
+  const mailAttachments = (template.attachments || []).map((att) => ({
+    filename: att.name,
+    path: path.join(__dirname, '..', att.path),
+    contentType: att.mimeType,
+  }));
 
   // Templates are compiled once per batch — cache handles cross-batch reuse
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
@@ -438,7 +495,14 @@ apiRouter.post('/uploads/:id/send-batch', batchLimiter, catchAsync(async (req, r
 
       while (attempts < maxAttempts) {
         try {
-          await sendEmail({ to: contact.email, subject: rendered.subject, html: rendered.html, text: rendered.text });
+          await sendEmail({
+            to: contact.email,
+            subject: rendered.subject,
+            html: rendered.html,
+            text: rendered.text,
+            senderEmail,
+            attachments: mailAttachments,
+          });
           await prisma.contact.update({
             where: { id: contact.id },
             data: { deliveryStatus: 'sent', deliveryError: null, sentAt: new Date() },
@@ -472,8 +536,8 @@ apiRouter.post('/uploads/:id/send-batch', batchLimiter, catchAsync(async (req, r
   await prisma.upload.update({
     where: { id },
     data: {
-      sentCount:    { increment: sentCount },
-      failedCount:  { increment: failedCount },
+      sentCount: { increment: sentCount },
+      failedCount: { increment: failedCount },
       pendingCount: { decrement: contacts.length },
     },
   });
@@ -564,7 +628,7 @@ apiRouter.put('/contacts/:id', catchAsync(async (req, res) => {
 
   const oldEmail = contact.email;
   const newEmail = email !== undefined ? email.trim().toLowerCase() : contact.email;
-  const newName  = name  !== undefined ? name.trim()               : contact.name;
+  const newName = name !== undefined ? name.trim() : contact.name;
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   let newStatus = 'valid';
@@ -603,19 +667,19 @@ apiRouter.put('/contacts/:id', catchAsync(async (req, res) => {
   const upload = await prisma.upload.findUnique({ where: { id: uploadId } });
 
   const updateData = {
-    totalRows:          counts.totalRows,
-    validEmails:        counts.validEmails,
-    invalidEmails:      counts.invalidEmails,
-    duplicateEmails:    counts.duplicateEmails,
+    totalRows: counts.totalRows,
+    validEmails: counts.validEmails,
+    invalidEmails: counts.invalidEmails,
+    duplicateEmails: counts.duplicateEmails,
     unsubscribedEmails: counts.unsubscribedEmails,
   };
 
   if (upload && upload.status !== 'idle') {
-    updateData.totalCount    = counts.validEmails;
-    updateData.sentCount     = counts.sentCount;
-    updateData.failedCount   = counts.failedCount;
-    updateData.pendingCount  = counts.pendingCount;
-    updateData.skippedCount  = counts.skippedCount;
+    updateData.totalCount = counts.validEmails;
+    updateData.sentCount = counts.sentCount;
+    updateData.failedCount = counts.failedCount;
+    updateData.pendingCount = counts.pendingCount;
+    updateData.skippedCount = counts.skippedCount;
   }
 
   await prisma.upload.update({ where: { id: uploadId }, data: updateData });
@@ -640,19 +704,19 @@ apiRouter.delete('/contacts/:id', catchAsync(async (req, res) => {
   const upload = await prisma.upload.findUnique({ where: { id: uploadId } });
 
   const updateData = {
-    totalRows:          counts.totalRows,
-    validEmails:        counts.validEmails,
-    invalidEmails:      counts.invalidEmails,
-    duplicateEmails:    counts.duplicateEmails,
+    totalRows: counts.totalRows,
+    validEmails: counts.validEmails,
+    invalidEmails: counts.invalidEmails,
+    duplicateEmails: counts.duplicateEmails,
     unsubscribedEmails: counts.unsubscribedEmails,
   };
 
   if (upload && upload.status !== 'idle') {
-    updateData.totalCount    = counts.validEmails;
-    updateData.sentCount     = counts.sentCount;
-    updateData.failedCount   = counts.failedCount;
-    updateData.pendingCount  = counts.pendingCount;
-    updateData.skippedCount  = counts.skippedCount;
+    updateData.totalCount = counts.validEmails;
+    updateData.sentCount = counts.sentCount;
+    updateData.failedCount = counts.failedCount;
+    updateData.pendingCount = counts.pendingCount;
+    updateData.skippedCount = counts.skippedCount;
   }
 
   await prisma.upload.update({ where: { id: uploadId }, data: updateData });
@@ -777,18 +841,44 @@ apiRouter.get('/contacts/:id/detail', catchAsync(async (req, res) => {
 // GET /templates
 apiRouter.get('/templates', catchAsync(async (req, res) => {
   await authenticate(req);
-  const templates = await prisma.template.findMany({ orderBy: { createdAt: 'desc' } });
+  const templates = await prisma.template.findMany({
+    orderBy: { createdAt: 'desc' },
+    include: { attachments: true },
+  });
   return res.status(200).json(templates);
 }));
 
 // POST /templates
-apiRouter.post('/templates', catchAsync(async (req, res) => {
+apiRouter.post('/templates', uploadMiddleware.array('attachments'), catchAsync(async (req, res) => {
   await authenticate(req);
   const { name, subject, htmlBody, plainTextBody } = req.body;
   if (!name || !subject || !htmlBody || !plainTextBody) {
     return res.status(400).json({ message: 'name, subject, htmlBody, and plainTextBody are required' });
   }
-  const template = await prisma.template.create({ data: { name, subject, htmlBody, plainTextBody } });
+
+  const files = req.files || [];
+  const attachmentsToCreate = [];
+
+  for (const file of files) {
+    const saved = await saveAttachment(file);
+    attachmentsToCreate.push(saved);
+  }
+
+  const template = await prisma.template.create({
+    data: {
+      name,
+      subject,
+      htmlBody,
+      plainTextBody,
+      attachments: {
+        create: attachmentsToCreate,
+      },
+    },
+    include: {
+      attachments: true,
+    },
+  });
+
   return res.status(201).json(template);
 }));
 
@@ -796,17 +886,33 @@ apiRouter.post('/templates', catchAsync(async (req, res) => {
 apiRouter.post('/templates/:id/test', catchAsync(async (req, res) => {
   const { id } = req.params;
   await authenticate(req);
-  const { testEmail } = req.body;
+  const { testEmail, senderEmail } = req.body;
   if (!testEmail) return res.status(400).json({ message: 'testEmail is required' });
 
-  const template = await prisma.template.findUnique({ where: { id } });
+  const template = await prisma.template.findUnique({
+    where: { id },
+    include: { attachments: true },
+  });
   if (!template) return res.status(404).json({ message: 'Template not found' });
+
+  const mailAttachments = (template.attachments || []).map((att) => ({
+    filename: att.name,
+    path: path.join(__dirname, '..', att.path),
+    contentType: att.mimeType,
+  }));
 
   const rendered = renderTemplate(
     { id: template.id, subject: template.subject, htmlBody: template.htmlBody, plainTextBody: template.plainTextBody },
     { name: 'Test User', email: testEmail, unsubscribeLink: '#' }
   );
-  await sendEmail({ to: testEmail, subject: `[TEST] ${rendered.subject}`, html: rendered.html, text: rendered.text });
+  await sendEmail({
+    to: testEmail,
+    subject: `[TEST] ${rendered.subject}`,
+    html: rendered.html,
+    text: rendered.text,
+    senderEmail,
+    attachments: mailAttachments,
+  });
   return res.status(200).json({ message: 'Test email sent successfully' });
 }));
 
@@ -814,29 +920,71 @@ apiRouter.post('/templates/:id/test', catchAsync(async (req, res) => {
 apiRouter.get('/templates/:id', catchAsync(async (req, res) => {
   const { id } = req.params;
   await authenticate(req);
-  const template = await prisma.template.findUnique({ where: { id } });
+  const template = await prisma.template.findUnique({
+    where: { id },
+    include: { attachments: true },
+  });
   if (!template) return res.status(404).json({ message: 'Template not found' });
   return res.status(200).json(template);
 }));
 
 // PUT /templates/:id
-apiRouter.put('/templates/:id', catchAsync(async (req, res) => {
+apiRouter.put('/templates/:id', uploadMiddleware.array('attachments'), catchAsync(async (req, res) => {
   const { id } = req.params;
   await authenticate(req);
-  const { name, subject, htmlBody, plainTextBody } = req.body;
-  const template = await prisma.template.findUnique({ where: { id } });
+  const { name, subject, htmlBody, plainTextBody, deleteAttachmentIds } = req.body;
+  const template = await prisma.template.findUnique({
+    where: { id },
+    include: { attachments: true },
+  });
   if (!template) return res.status(404).json({ message: 'Template not found' });
 
   // Invalidate compiled cache so next render uses new content
   invalidateTemplate(id);
 
+  // 1. Delete requested attachments
+  let deletedIds = [];
+  if (deleteAttachmentIds) {
+    try {
+      deletedIds = typeof deleteAttachmentIds === 'string'
+        ? JSON.parse(deleteAttachmentIds)
+        : deleteAttachmentIds;
+    } catch (e) {
+      if (typeof deleteAttachmentIds === 'string') {
+        deletedIds = deleteAttachmentIds.split(',').map(s => s.trim()).filter(Boolean);
+      }
+    }
+  }
+
+  if (Array.isArray(deletedIds) && deletedIds.length > 0) {
+    const attachmentsToDelete = template.attachments.filter(att => deletedIds.includes(att.id));
+    for (const att of attachmentsToDelete) {
+      await deleteAttachmentFile(att.path);
+      await prisma.attachment.delete({ where: { id: att.id } });
+    }
+  }
+
+  // 2. Add new attachments
+  const files = req.files || [];
+  const attachmentsToCreate = [];
+  for (const file of files) {
+    const saved = await saveAttachment(file);
+    attachmentsToCreate.push(saved);
+  }
+
   const updated = await prisma.template.update({
     where: { id },
     data: {
-      name:          name          || template.name,
-      subject:       subject       || template.subject,
-      htmlBody:      htmlBody      || template.htmlBody,
-      plainTextBody: plainTextBody || template.plainTextBody,
+      name: name !== undefined ? name : template.name,
+      subject: subject !== undefined ? subject : template.subject,
+      htmlBody: htmlBody !== undefined ? htmlBody : template.htmlBody,
+      plainTextBody: plainTextBody !== undefined ? plainTextBody : template.plainTextBody,
+      attachments: {
+        create: attachmentsToCreate,
+      },
+    },
+    include: {
+      attachments: true,
     },
   });
   return res.status(200).json(updated);
@@ -846,9 +994,22 @@ apiRouter.put('/templates/:id', catchAsync(async (req, res) => {
 apiRouter.delete('/templates/:id', catchAsync(async (req, res) => {
   const { id } = req.params;
   await authenticate(req);
-  const template = await prisma.template.findUnique({ where: { id } });
+  const template = await prisma.template.findUnique({
+    where: { id },
+    include: { attachments: true },
+  });
   if (!template) return res.status(404).json({ message: 'Template not found' });
+  
   invalidateTemplate(id);
+
+  // Delete files on disk
+  if (template.attachments && template.attachments.length > 0) {
+    for (const att of template.attachments) {
+      await deleteAttachmentFile(att.path);
+    }
+  }
+
+  // Delete from DB (cascades database delete for Attachment records)
   await prisma.template.delete({ where: { id } });
   return res.status(200).json({ message: 'Template deleted successfully' });
 }));

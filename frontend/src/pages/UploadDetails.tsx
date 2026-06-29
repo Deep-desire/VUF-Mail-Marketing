@@ -44,6 +44,9 @@ export default function UploadDetails() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [iframeHeight, setIframeHeight] = useState('400px');
+  const [smtpSenders, setSmtpSenders] = useState<string[]>([]);
+  const [selectedSenderEmail, setSelectedSenderEmail] = useState('');
+  const [isSmtpDropdownOpen, setIsSmtpDropdownOpen] = useState(false);
 
   // Edit Contact States
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -204,7 +207,7 @@ export default function UploadDetails() {
         setIframeHeight(`${height}px`);
       }
     };
-    
+
     updateHeight();
     setTimeout(updateHeight, 200);
     setTimeout(updateHeight, 1000);
@@ -227,7 +230,7 @@ export default function UploadDetails() {
 
   useEffect(() => {
     if (!id) return;
-    
+
     // Initial fetch
     Promise.all([
       uploadApi.getOne(id),
@@ -265,15 +268,25 @@ export default function UploadDetails() {
 
   const handleOpenSendModal = async () => {
     try {
-      const res = await templateApi.getAll();
-      setTemplates(res.data);
-      if (res.data.length > 0) {
-        setSelectedTemplateId(res.data[0].id);
+      const [templatesRes, sendersRes] = await Promise.all([
+        templateApi.getAll(),
+        uploadApi.getSmtpSenders(),
+      ]);
+      setTemplates(templatesRes.data);
+      if (templatesRes.data.length > 0) {
+        setSelectedTemplateId(templatesRes.data[0].id);
+      }
+      setSmtpSenders(sendersRes.data);
+      if (sendersRes.data.length > 0) {
+        setSelectedSenderEmail(sendersRes.data[0]);
+      } else {
+        setSelectedSenderEmail('');
       }
       setIsDropdownOpen(false);
+      setIsSmtpDropdownOpen(false);
       setIsSendModalOpen(true);
     } catch {
-      toast.error('Failed to load templates');
+      toast.error('Failed to load templates or SMTP configurations');
     }
   };
 
@@ -307,10 +320,11 @@ export default function UploadDetails() {
           await uploadApi.sendBatch(id, {
             templateId: selectedTemplateId,
             contactIds,
+            senderEmail: selectedSenderEmail,
           });
 
           setBatchProgress({ current: i + 1, total: batches.length, active: true });
-          
+
           // Refresh list / stats in background
           fetchDetails();
 
@@ -514,7 +528,7 @@ export default function UploadDetails() {
                   <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                     Choose Template
                   </label>
-                  
+
                   <div className="flex gap-2 items-center relative">
                     <div className="flex-1 relative">
                       {/* Custom Styled Dropdown Trigger */}
@@ -533,11 +547,11 @@ export default function UploadDetails() {
                       {isDropdownOpen && (
                         <>
                           {/* Click Outside Overlay */}
-                          <div 
-                            className="fixed inset-0 z-40 cursor-default" 
-                            onClick={() => setIsDropdownOpen(false)} 
+                          <div
+                            className="fixed inset-0 z-40 cursor-default"
+                            onClick={() => setIsDropdownOpen(false)}
                           />
-                          
+
                           {/* Options List */}
                           <div className="absolute left-0 right-0 mt-1.5 bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden max-h-60 overflow-y-auto">
                             <div className="p-1 divide-y divide-white/5">
@@ -551,11 +565,10 @@ export default function UploadDetails() {
                                       setSelectedTemplateId(t.id);
                                       setIsDropdownOpen(false);
                                     }}
-                                    className={`w-full px-4 py-3 text-left text-sm rounded-lg transition-colors flex items-center justify-between ${
-                                      isSelected
+                                    className={`w-full px-4 py-3 text-left text-sm rounded-lg transition-colors flex items-center justify-between ${isSelected
                                         ? 'bg-brand-600/30 text-white font-semibold'
                                         : 'text-gray-300 hover:bg-white/5 hover:text-white'
-                                    }`}
+                                      }`}
                                   >
                                     <span className="truncate">{t.name}</span>
                                     {isSelected && (
@@ -577,16 +590,81 @@ export default function UploadDetails() {
                         setIframeHeight('400px');
                         setIsPreviewModalOpen(true);
                       }}
-                      className={`p-3 rounded-xl border transition-all flex items-center justify-center shrink-0 ${
-                        selectedTemplateId
+                      className={`p-3 rounded-xl border transition-all flex items-center justify-center shrink-0 ${selectedTemplateId
                           ? 'bg-white/5 border-white/10 text-gray-400 hover:text-white hover:bg-white/10 hover:border-white/20'
                           : 'bg-white/5 border-white/5 text-gray-600 cursor-not-allowed'
-                      }`}
+                        }`}
                       title="Preview Template"
                       disabled={!selectedTemplateId}
                     >
                       <Eye className="w-5 h-5" />
                     </button>
+                  </div>
+                </div>
+
+                {/* SMTP Sender Selection */}
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                    Select Sender Email
+                  </label>
+
+                  <div className="relative">
+                    {/* Custom Styled Dropdown Trigger */}
+                    <button
+                      type="button"
+                      onClick={() => setIsSmtpDropdownOpen(!isSmtpDropdownOpen)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 hover:border-white/20 transition-all text-sm flex items-center justify-between text-left"
+                    >
+                      <span className="truncate">
+                        {selectedSenderEmail ? selectedSenderEmail : 'Select a sender email'}
+                      </span>
+                      <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${isSmtpDropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {/* Custom Styled Dropdown Options */}
+                    {isSmtpDropdownOpen && (
+                      <>
+                        {/* Click Outside Overlay */}
+                        <div
+                          className="fixed inset-0 z-40 cursor-default"
+                          onClick={() => setIsSmtpDropdownOpen(false)}
+                        />
+
+                        {/* Options List */}
+                        <div className="absolute left-0 right-0 mt-1.5 bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden max-h-60 overflow-y-auto">
+                          <div className="p-1 divide-y divide-white/5">
+                            {smtpSenders.length === 0 ? (
+                              <div className="px-4 py-3 text-sm text-gray-500">
+                                No SMTP senders configured
+                              </div>
+                            ) : (
+                              smtpSenders.map((email) => {
+                                const isSelected = email === selectedSenderEmail;
+                                return (
+                                  <button
+                                    key={email}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedSenderEmail(email);
+                                      setIsSmtpDropdownOpen(false);
+                                    }}
+                                    className={`w-full px-4 py-3 text-left text-sm rounded-lg transition-colors flex items-center justify-between ${isSelected
+                                        ? 'bg-brand-600/30 text-white font-semibold'
+                                        : 'text-gray-300 hover:bg-white/5 hover:text-white'
+                                      }`}
+                                  >
+                                    <span className="truncate">{email}</span>
+                                    {isSelected && (
+                                      <span className="w-1.5 h-1.5 rounded-full bg-brand-400 shadow-[0_0_8px_rgba(99,102,241,0.8)]" />
+                                    )}
+                                  </button>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -655,7 +733,7 @@ export default function UploadDetails() {
                   <span>deep &lt;deep@example.com&gt;</span>
                 </div>
               </div>
-              
+
               {/* Email Content Frame */}
               <div className="flex-1 bg-slate-900/50 overflow-y-auto p-4 md:p-6 flex justify-center">
                 <div className="bg-white rounded-lg shadow-xl w-full max-w-[650px] overflow-hidden self-start">
@@ -693,10 +771,10 @@ export default function UploadDetails() {
                         </head>
                         <body>
                           ${selectedTemplate.htmlBody
-                            .replace(/\{\{\s*name\s*\}\}/g, 'deep')
-                            .replace(/\{\{\s*email\s*\}\}/g, 'deep@example.com')
-                            .replace(/\{\{\s*unsubscribeLink\s*\}\}/g, '#')
-                          }
+                        .replace(/\{\{\s*name\s*\}\}/g, 'deep')
+                        .replace(/\{\{\s*email\s*\}\}/g, 'deep@example.com')
+                        .replace(/\{\{\s*unsubscribeLink\s*\}\}/g, '#')
+                      }
                         </body>
                       </html>
                     `}

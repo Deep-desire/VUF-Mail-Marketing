@@ -51,6 +51,15 @@ export interface ContactsResponse {
   totalPages: number;
 }
 
+export interface TemplateAttachment {
+  id: string;
+  name: string;
+  path: string;
+  mimeType: string;
+  size: number;
+  createdAt: string;
+}
+
 export interface Template {
   id: string;
   name: string;
@@ -59,6 +68,7 @@ export interface Template {
   plainTextBody: string;
   createdAt: string;
   updatedAt: string;
+  attachments?: TemplateAttachment[];
 }
 
 export interface Campaign {
