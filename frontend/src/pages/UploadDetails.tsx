@@ -330,7 +330,7 @@ export default function UploadDetails() {
 
           // Sleep 200ms between batches to honor rate limits
           if (i < batches.length - 1) {
-            await new Promise((resolve) => setTimeout(resolve, 200));
+            await new Promise((resolve) => setTimeout(resolve, 1000));
           }
         }
 
@@ -566,8 +566,8 @@ export default function UploadDetails() {
                                       setIsDropdownOpen(false);
                                     }}
                                     className={`w-full px-4 py-3 text-left text-sm rounded-lg transition-colors flex items-center justify-between ${isSelected
-                                        ? 'bg-brand-600/30 text-white font-semibold'
-                                        : 'text-gray-300 hover:bg-white/5 hover:text-white'
+                                      ? 'bg-brand-600/30 text-white font-semibold'
+                                      : 'text-gray-300 hover:bg-white/5 hover:text-white'
                                       }`}
                                   >
                                     <span className="truncate">{t.name}</span>
@@ -591,8 +591,8 @@ export default function UploadDetails() {
                         setIsPreviewModalOpen(true);
                       }}
                       className={`p-3 rounded-xl border transition-all flex items-center justify-center shrink-0 ${selectedTemplateId
-                          ? 'bg-white/5 border-white/10 text-gray-400 hover:text-white hover:bg-white/10 hover:border-white/20'
-                          : 'bg-white/5 border-white/5 text-gray-600 cursor-not-allowed'
+                        ? 'bg-white/5 border-white/10 text-gray-400 hover:text-white hover:bg-white/10 hover:border-white/20'
+                        : 'bg-white/5 border-white/5 text-gray-600 cursor-not-allowed'
                         }`}
                       title="Preview Template"
                       disabled={!selectedTemplateId}
@@ -649,8 +649,8 @@ export default function UploadDetails() {
                                       setIsSmtpDropdownOpen(false);
                                     }}
                                     className={`w-full px-4 py-3 text-left text-sm rounded-lg transition-colors flex items-center justify-between ${isSelected
-                                        ? 'bg-brand-600/30 text-white font-semibold'
-                                        : 'text-gray-300 hover:bg-white/5 hover:text-white'
+                                      ? 'bg-brand-600/30 text-white font-semibold'
+                                      : 'text-gray-300 hover:bg-white/5 hover:text-white'
                                       }`}
                                   >
                                     <span className="truncate">{email}</span>
