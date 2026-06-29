@@ -72,7 +72,7 @@ export default function EmailDetailModal({ contactId, onClose }: Props) {
         setIframeHeight(`${Math.min(Math.max(height, 250), 500)}px`);
       }
     };
-    
+
     updateHeight();
     setTimeout(updateHeight, 200);
     setTimeout(updateHeight, 1000);
@@ -81,7 +81,7 @@ export default function EmailDetailModal({ contactId, onClose }: Props) {
   return (
     <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
       <div className="glass-card max-w-3xl w-full p-6 space-y-6 relative border border-white/10 flex flex-col max-h-[90vh] shadow-2xl animate-scale-in">
-        
+
         {/* Close Button */}
         <button
           onClick={onClose}
@@ -165,22 +165,20 @@ export default function EmailDetailModal({ contactId, onClose }: Props) {
             <div className="flex border-b border-white/5">
               <button
                 onClick={() => setActiveTab('html')}
-                className={`px-4 py-2 text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 border-b-2 transition-all ${
-                  activeTab === 'html'
-                    ? 'border-brand-500 text-brand-400 bg-brand-500/5'
-                    : 'border-transparent text-gray-500 hover:text-gray-300'
-                }`}
+                className={`px-4 py-2 text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 border-b-2 transition-all ${activeTab === 'html'
+                  ? 'border-brand-500 text-brand-400 bg-brand-500/5'
+                  : 'border-transparent text-gray-500 hover:text-gray-300'
+                  }`}
               >
                 <Eye className="w-4 h-4" />
                 HTML Preview
               </button>
               <button
                 onClick={() => setActiveTab('text')}
-                className={`px-4 py-2 text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 border-b-2 transition-all ${
-                  activeTab === 'text'
-                    ? 'border-brand-500 text-brand-400 bg-brand-500/5'
-                    : 'border-transparent text-gray-500 hover:text-gray-300'
-                }`}
+                className={`px-4 py-2 text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 border-b-2 transition-all ${activeTab === 'text'
+                  ? 'border-brand-500 text-brand-400 bg-brand-500/5'
+                  : 'border-transparent text-gray-500 hover:text-gray-300'
+                  }`}
               >
                 <AlignLeft className="w-4 h-4" />
                 Plain Text View

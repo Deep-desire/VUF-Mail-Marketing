@@ -33,38 +33,67 @@ const uploadMiddleware = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
-// Ensure attachments folder exists
-const attachmentsDir = path.join(__dirname, '..', 'uploads', 'attachments');
-if (!fs.existsSync(attachmentsDir)) {
-  fs.mkdirSync(attachmentsDir, { recursive: true });
-}
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Helper to save a file from memory buffer to local storage
+// Helper to save a file to Supabase Storage
 async function saveAttachment(file) {
   const fileExt = path.extname(file.originalname);
   const uniqueName = `${uuidv4()}${fileExt}`;
-  const relativePath = path.join('uploads', 'attachments', uniqueName);
-  const absolutePath = path.join(__dirname, '..', relativePath);
 
-  await fs.promises.writeFile(absolutePath, file.buffer);
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Supabase URL or Service Role Key is not configured in environment variables');
+  }
+
+  const uploadUrl = `${SUPABASE_URL}/storage/v1/object/attachments/${uniqueName}`;
+  const response = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': file.mimetype,
+    },
+    body: file.buffer,
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Failed to upload to Supabase Storage: ${errText}`);
+  }
+
+  const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/attachments/${uniqueName}`;
 
   return {
     name: file.originalname,
-    path: relativePath.replace(/\\/g, '/'), // normalize windows path separators
+    path: publicUrl,
     mimeType: file.mimetype,
     size: file.size,
   };
 }
 
-// Helper to delete an attachment file from disk
-async function deleteAttachmentFile(relativePath) {
+// Helper to delete an attachment file from Supabase Storage or disk
+async function deleteAttachmentFile(filePath) {
   try {
-    const absolutePath = path.join(__dirname, '..', relativePath);
-    if (fs.existsSync(absolutePath)) {
-      await fs.promises.unlink(absolutePath);
+    if (filePath && filePath.startsWith('http')) {
+      const uniqueName = filePath.substring(filePath.lastIndexOf('/') + 1);
+      const deleteUrl = `${SUPABASE_URL}/storage/v1/object/attachments/${uniqueName}`;
+      const response = await fetch(deleteUrl, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+      });
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error(`Failed to delete from Supabase Storage: ${errText}`);
+      }
+    } else if (filePath) {
+      const absolutePath = path.join(__dirname, '..', filePath);
+      if (fs.existsSync(absolutePath)) {
+        await fs.promises.unlink(absolutePath);
+      }
     }
   } catch (err) {
-    console.error(`Failed to delete file on disk at ${relativePath}:`, err.message);
+    console.error(`Failed to delete attachment:`, err.message);
   }
 }
 
@@ -999,7 +1028,7 @@ apiRouter.delete('/templates/:id', catchAsync(async (req, res) => {
     include: { attachments: true },
   });
   if (!template) return res.status(404).json({ message: 'Template not found' });
-  
+
   invalidateTemplate(id);
 
   // Delete files on disk
