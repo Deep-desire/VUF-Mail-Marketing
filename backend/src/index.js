@@ -495,7 +495,7 @@ apiRouter.post('/uploads/:id/send-batch', batchLimiter, catchAsync(async (req, r
   // Map template attachments to absolute paths for Nodemailer
   const mailAttachments = (template.attachments || []).map((att) => ({
     filename: att.name,
-    path: path.join(__dirname, '..', att.path),
+    path: att.path.startsWith('http') ? att.path : path.join(__dirname, '..', att.path),
     contentType: att.mimeType,
   }));
 
@@ -926,7 +926,7 @@ apiRouter.post('/templates/:id/test', catchAsync(async (req, res) => {
 
   const mailAttachments = (template.attachments || []).map((att) => ({
     filename: att.name,
-    path: path.join(__dirname, '..', att.path),
+    path: att.path.startsWith('http') ? att.path : path.join(__dirname, '..', att.path),
     contentType: att.mimeType,
   }));
 
