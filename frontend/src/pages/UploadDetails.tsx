@@ -330,7 +330,7 @@ export default function UploadDetails() {
 
           // Sleep 200ms between batches to honor rate limits
           if (i < batches.length - 1) {
-            await new Promise((resolve) => setTimeout(resolve, 1000));
+            await new Promise((resolve) => setTimeout(resolve, 15000));
           }
         }
 
